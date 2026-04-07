@@ -742,7 +742,7 @@ async function loadDataStatus() {
     }
 
     // LPN Cajas
-    const cajas = await queryTable('3-historial_cajas', 'fecha_produccion');
+    const cajas = await queryTable('3-historial_cajas', 'dia');
     const elCajas = document.getElementById('statusCajas');
     const elCajasD = document.getElementById('statusCajasDetail');
     if (cajas.error) {
@@ -755,7 +755,7 @@ async function loadDataStatus() {
     }
 
     // Destino
-    const destino = await queryTable('3-historial_destino', 'fecha_produccion');
+    const destino = await queryTable('3-historial_destino', 'dia');
     const elDest = document.getElementById('statusDestino');
     const elDestD = document.getElementById('statusDestinoDetail');
     if (destino.error) {
