@@ -63,11 +63,6 @@
         .remove-btn:hover { background: rgba(201,53,53,0.2); }
 
         /* Semana */
-        .semana-section { background: var(--white); border-radius: 12px; padding: 18px 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-        .semana-section label { font-size: 13px; font-weight: 600; color: #000; white-space: nowrap; }
-        .semana-input { font-family: 'JetBrains Mono', monospace; font-size: 14px; padding: 8px 12px; border: 1.5px solid var(--silver); border-radius: 8px; outline: none; width: 200px; }
-        .semana-input:focus { border-color: var(--navy); }
-        .semana-hint { font-size: 11px; color: var(--slate); }
 
         /* Action */
         .action-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
@@ -150,13 +145,6 @@
     <div class="info-box">
         <strong>Proceso automatico:</strong> Al subir los archivos, el sistema: 1) Carga los datos (ignorando duplicados), 2) Calcula y guarda la productividad diaria por operario, 3) Limpia data cruda mayor a 2 meses.<br>
         Si subes el mismo archivo dos veces, no se duplica nada.
-    </div>
-
-    <!-- Semana Carga -->
-    <div class="semana-section">
-        <label>Identificador de carga:</label>
-        <input type="text" class="semana-input" id="semanaCarga" placeholder="ej: Marzo 2026">
-        <span class="semana-hint">Nombre del periodo que estas subiendo</span>
     </div>
 
     <!-- Upload Cards: solo CAJAS y DESTINO -->
@@ -342,7 +330,8 @@ function processFile(file, type) {
 
 function mapColumns(rows, type) {
     const colMap = COLUMN_MAP[type];
-    const semanaCarga = document.getElementById('semanaCarga').value || 'sin-etiqueta';
+    const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const semanaCarga = months[new Date().getMonth()] + ' ' + new Date().getFullYear();
 
     return rows.map(row => {
         const mapped = {};
@@ -557,7 +546,7 @@ async function startUpload() {
                         archivo: files[type] ? files[type].name : 'desconocido',
                         tipo_data: type,
                         registros: inserted,
-                        semana_carga: document.getElementById('semanaCarga').value || null,
+                        semana_carga: semanaCarga || null,
                     }),
                 });
             } catch(e) {}
@@ -663,9 +652,6 @@ async function checkConnection() {
 checkConnection();
 
 
-// Auto-fill semana carga
-const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-document.getElementById('semanaCarga').value = months[new Date().getMonth()] + ' ' + new Date().getFullYear();
 </script>
 </body>
 </html>
