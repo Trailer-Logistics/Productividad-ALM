@@ -736,13 +736,11 @@
 
                         setAllData(data || []);
 
-                        // Set default date range to last 30 days
+                        // Set default date range to full data range
                         if (data && data.length > 0) {
-                            const today = new Date();
-                            const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-                            setDateFrom(thirtyDaysAgo.toISOString().split('T')[0]);
-                            setDateTo(today.toISOString().split('T')[0]);
+                            const dates = data.map(d => d.dia).sort();
+                            setDateFrom(dates[0]);
+                            setDateTo(dates[dates.length - 1]);
                         }
                     } catch (err) {
                         console.error('Error fetching data:', err);
@@ -795,29 +793,37 @@
                 };
             }, [filteredData]);
 
-            // Prepare Chart Data - Tendencia
+            // Prepare Chart Data - Tendencia (respeta periodView)
             const tendenciaData = useMemo(() => {
-                const groupedByDate = {};
+                const grouped = {};
 
                 filteredData.forEach(item => {
-                    if (!groupedByDate[item.dia]) {
-                        groupedByDate[item.dia] = {
-                            fecha: item.dia,
-                            productividad: 0,
-                            count: 0
-                        };
+                    let key, label;
+                    if (periodView === 'Semanal') {
+                        key = item.anio + '-S' + String(item.semana).padStart(2, '0');
+                        label = 'S' + item.semana + ' ' + item.anio;
+                    } else if (periodView === 'Mensual') {
+                        key = item.anio + '-' + String(item.mes).padStart(2, '0');
+                        const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+                        label = meses[item.mes] + ' ' + item.anio;
+                    } else {
+                        key = item.dia;
+                        label = formatDate(item.dia);
                     }
-                    groupedByDate[item.dia].productividad += item.productividad_hora || 0;
-                    groupedByDate[item.dia].count += 1;
+                    if (!grouped[key]) {
+                        grouped[key] = { key, label, productividad: 0, count: 0 };
+                    }
+                    grouped[key].productividad += item.productividad_hora || 0;
+                    grouped[key].count += 1;
                 });
 
-                return Object.values(groupedByDate)
+                return Object.values(grouped)
+                    .sort((a, b) => a.key.localeCompare(b.key))
                     .map(item => ({
-                        fecha: formatDate(item.fecha),
+                        fecha: item.label,
                         'Pallets/Hora': parseFloat((item.productividad / item.count).toFixed(2))
-                    }))
-                    .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-            }, [filteredData]);
+                    }));
+            }, [filteredData, periodView]);
 
             // Prepare Chart Data - Por Cargo
             const cargoData = useMemo(() => {
@@ -843,26 +849,33 @@
                     .sort((a, b) => b['Pallets/Hora'] - a['Pallets/Hora']);
             }, [filteredData]);
 
-            // Prepare Chart Data - Distribucion
+            // Prepare Chart Data - Distribucion (respeta periodView)
             const distribucionData = useMemo(() => {
-                const groupedByDate = {};
+                const grouped = {};
 
                 filteredData.forEach(item => {
-                    if (!groupedByDate[item.dia]) {
-                        groupedByDate[item.dia] = {
-                            fecha: formatDate(item.dia),
-                            'Pallets': 0,
-                            'Destino': 0
-                        };
+                    let key, label;
+                    if (periodView === 'Semanal') {
+                        key = item.anio + '-S' + String(item.semana).padStart(2, '0');
+                        label = 'S' + item.semana;
+                    } else if (periodView === 'Mensual') {
+                        key = item.anio + '-' + String(item.mes).padStart(2, '0');
+                        const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+                        label = meses[item.mes] + ' ' + item.anio;
+                    } else {
+                        key = item.dia;
+                        label = formatDate(item.dia);
                     }
-                    groupedByDate[item.dia]['Pallets'] += item.mov_cajas || 0;
-                    groupedByDate[item.dia]['Destino'] += item.mov_destino || 0;
+                    if (!grouped[key]) {
+                        grouped[key] = { key, fecha: label, 'Pallets': 0, 'Destino': 0 };
+                    }
+                    grouped[key]['Pallets'] += item.mov_cajas || 0;
+                    grouped[key]['Destino'] += item.mov_destino || 0;
                 });
 
-                return Object.values(groupedByDate)
-                    .sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
-                    .slice(-20);
-            }, [filteredData]);
+                return Object.values(grouped)
+                    .sort((a, b) => a.key.localeCompare(b.key));
+            }, [filteredData, periodView]);
 
             // Prepare Ranking Data
             const rankingData = useMemo(() => {
