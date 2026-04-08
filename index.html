@@ -140,7 +140,7 @@
 
 <div class="main">
     <h2 class="page-title">Carga de Datos de Productividad</h2>
-    <p class="page-subtitle">Sube los archivos Excel del WMS — la productividad se calcula y almacena automaticamente</p>
+    <p class="page-subtitle">Sube los archivos Excel o CSV del WMS — la productividad se calcula y almacena automaticamente</p>
 
     <div class="info-box">
         <strong>Proceso automatico:</strong> Al subir los archivos, el sistema: 1) Carga los datos (ignorando duplicados), 2) Calcula y guarda la productividad diaria por operario, 3) Limpia data cruda mayor a 2 meses.<br>
@@ -155,11 +155,11 @@
             </div>
             <div class="card-label">Tabla: 3-historial_cajas</div>
             <div class="card-title">Historial LPN Cajas</div>
-            <div class="card-desc" id="descCajas">Arrastra el Excel o haz click para seleccionar</div>
+            <div class="card-desc" id="descCajas">Arrastra el Excel o CSV, o haz click para seleccionar</div>
             <div class="card-filename" id="filenameCajas"></div>
             <div class="card-stats" id="statsCajas"></div>
             <div class="card-stats-label" id="statsLabelCajas"></div>
-            <input type="file" accept=".xlsx,.xls" onchange="handleFile(event,'cajas')">
+            <input type="file" accept=".xlsx,.xls,.csv" onchange="handleFile(event,'cajas')">
             <button class="remove-btn" id="removeCajas" style="display:none" onclick="removeFile(event,'cajas')">&#10005;</button>
         </div>
 
@@ -169,11 +169,11 @@
             </div>
             <div class="card-label">Tabla: 3-historial_destino</div>
             <div class="card-title">Historial LPN Destino</div>
-            <div class="card-desc" id="descDestino">Arrastra el Excel o haz click para seleccionar</div>
+            <div class="card-desc" id="descDestino">Arrastra el Excel o CSV, o haz click para seleccionar</div>
             <div class="card-filename" id="filenameDestino"></div>
             <div class="card-stats" id="statsDestino"></div>
             <div class="card-stats-label" id="statsLabelDestino"></div>
-            <input type="file" accept=".xlsx,.xls" onchange="handleFile(event,'destino')">
+            <input type="file" accept=".xlsx,.xls,.csv" onchange="handleFile(event,'destino')">
             <button class="remove-btn" id="removeDestino" style="display:none" onclick="removeFile(event,'destino')">&#10005;</button>
         </div>
     </div>
@@ -277,7 +277,7 @@ function handleDrop(e, type) {
     e.preventDefault();
     document.getElementById(CARD_MAP[type]).classList.remove('dragover');
     const file = e.dataTransfer.files[0];
-    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) processFile(file, type);
+    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv'))) processFile(file, type);
 }
 function handleFile(e, type) { const file = e.target.files[0]; if (file) processFile(file, type); }
 
@@ -344,7 +344,15 @@ function mapColumns(rows, type) {
                     if (val instanceof Date) {
                         val = val.toISOString();
                     } else if (typeof val === 'string' && !val.includes('T')) {
-                        try { val = new Date(val).toISOString(); } catch(e) {}
+                        try {
+                            // Formato chileno dd/mm/yyyy hh:mm:ss
+                            const m = val.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/);
+                            if (m) {
+                                val = new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]), parseInt(m[4]), parseInt(m[5]), parseInt(m[6])).toISOString();
+                            } else {
+                                val = new Date(val).toISOString();
+                            }
+                        } catch(e) {}
                     }
                 }
 
