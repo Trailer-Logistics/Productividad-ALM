@@ -611,7 +611,7 @@
         );
 
         // Ranking Table Component
-        const RankingTable = ({ data, currentPage, itemsPerPage, onPageChange, searchTerm, onSearchChange }) => {
+        const RankingTable = ({ data, currentPage, itemsPerPage, onPageChange, searchTerm, onSearchChange, isDaily }) => {
             const filteredData = useMemo(() => {
                 return data.filter(item =>
                     item.nombre.toLowerCase().includes(searchTerm.toLowerCase())
@@ -656,7 +656,7 @@
                                         <th>Operario</th>
                                         <th>Cargo</th>
                                         <th>Prom. Pallets/Hora</th>
-                                        <th>Semanas Trab.</th>
+                                        <th>{isDaily ? 'Dias Trab.' : 'Semanas Trab.'}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -666,7 +666,7 @@
                                             <td><span className="operator-name">{item.nombre}</span></td>
                                             <td><span className="cargo-badge">{item.cargo}</span></td>
                                             <td><span className="mono-value">{formatChileanNumber(item.productividad_promedio)}</span></td>
-                                            <td><span className="mono-value">{item.semanas_trabajadas}</span></td>
+                                            <td><span className="mono-value">{item.periodos_trabajados}</span></td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -705,7 +705,8 @@
 
         // Main Dashboard Component
         const Dashboard = () => {
-            const [allData, setAllData] = useState([]);
+            const [weeklyData, setWeeklyData] = useState([]);
+            const [dailyData, setDailyData] = useState([]);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             const [dateFrom, setDateFrom] = useState('');
@@ -729,28 +730,40 @@
 
             const mesToNum = {'Enero':1,'Febrero':2,'Marzo':3,'Abril':4,'Mayo':5,'Junio':6,'Julio':7,'Agosto':8,'Septiembre':9,'Octubre':10,'Noviembre':11,'Diciembre':12};
 
-            // Fetch Data on Mount — single source: productividad_semanal
+            // Fetch Data on Mount — dual source: daily + weekly
             useEffect(() => {
                 const fetchData = async () => {
                     try {
                         setLoading(true);
                         setError(null);
 
-                        const { data, error: supabaseError } = await supabase
-                            .from('3-productividad_semanal')
-                            .select('*')
-                            .order('anio', { ascending: true })
-                            .order('semana', { ascending: true });
+                        // Fetch both tables in parallel
+                        const [weeklyRes, dailyRes] = await Promise.all([
+                            supabase
+                                .from('3-productividad_semanal')
+                                .select('*')
+                                .order('anio', { ascending: true })
+                                .order('semana', { ascending: true }),
+                            supabase
+                                .from('3-productividad_final')
+                                .select('*')
+                                .order('dia', { ascending: true })
+                        ]);
 
-                        if (supabaseError) throw supabaseError;
+                        if (weeklyRes.error) throw weeklyRes.error;
+                        if (dailyRes.error) throw dailyRes.error;
 
-                        setAllData(data || []);
+                        setWeeklyData(weeklyRes.data || []);
+                        setDailyData(dailyRes.data || []);
 
-                        // Set default date range covering ALL data
-                        if (data && data.length > 0) {
-                            const dates = data.map(d => weekToDate(d.anio, d.semana)).sort();
-                            setDateFrom(dates[0]);
-                            setDateTo(dates[dates.length - 1]);
+                        // Set default date range covering ALL data (weekly has more history)
+                        const allDates = [];
+                        (weeklyRes.data || []).forEach(d => allDates.push(weekToDate(d.anio, d.semana)));
+                        (dailyRes.data || []).forEach(d => allDates.push(d.dia));
+                        allDates.sort();
+                        if (allDates.length > 0) {
+                            setDateFrom(allDates[0]);
+                            setDateTo(allDates[allDates.length - 1]);
                         }
                     } catch (err) {
                         console.error('Error fetching data:', err);
@@ -763,10 +776,16 @@
                 fetchData();
             }, []);
 
-            // Filter data (single source: productividad_semanal)
+            // Determine active data source based on period view
+            const isDaily = periodView === 'Diario';
+            const sourceData = isDaily ? dailyData : weeklyData;
+
+            // Filter data
             const filteredData = useMemo(() => {
-                return allData.filter(item => {
-                    const itemDate = new Date(weekToDate(item.anio, item.semana));
+                return sourceData.filter(item => {
+                    const itemDate = isDaily
+                        ? new Date(item.dia)
+                        : new Date(weekToDate(item.anio, item.semana));
                     const fromDate = dateFrom ? new Date(dateFrom) : null;
                     const toDate = dateTo ? new Date(dateTo) : null;
 
@@ -777,37 +796,47 @@
 
                     return true;
                 });
-            }, [allData, dateFrom, dateTo, selectedCargo, selectedOperario]);
+            }, [sourceData, isDaily, dateFrom, dateTo, selectedCargo, selectedOperario]);
 
             // Calculate KPIs
             const kpis = useMemo(() => {
                 if (filteredData.length === 0) {
-                    return { avgProductivity: 0, activeOperators: 0, semanasConData: 0 };
+                    return { avgProductivity: 0, activeOperators: 0, periodCount: 0 };
                 }
 
+                const prodField = isDaily ? 'productividad_hora' : 'productividad';
                 let prodSum = 0, prodCount = 0;
-                filteredData.forEach(item => { prodSum += parseFloat(item.productividad || 0); prodCount++; });
+                filteredData.forEach(item => { prodSum += parseFloat(item[prodField] || 0); prodCount++; });
                 const avgProductivity = prodCount > 0 ? prodSum / prodCount : 0;
 
                 const ops = new Set();
                 filteredData.forEach(item => ops.add(item.nombre));
                 const activeOperators = ops.size;
 
-                const semanas = new Set();
-                filteredData.forEach(item => semanas.add('S' + item.semana + '-' + item.anio));
-                const semanasConData = semanas.size;
+                const periods = new Set();
+                if (isDaily) {
+                    filteredData.forEach(item => periods.add(item.dia));
+                } else {
+                    filteredData.forEach(item => periods.add('S' + item.semana + '-' + item.anio));
+                }
+                const periodCount = periods.size;
 
-                return { avgProductivity, activeOperators, semanasConData };
-            }, [filteredData]);
+                return { avgProductivity, activeOperators, periodCount };
+            }, [filteredData, isDaily]);
 
-            // Prepare Chart Data - Tendencia (semanal o mensual)
+            // Prepare Chart Data - Tendencia (diario, semanal o mensual)
             const tendenciaData = useMemo(() => {
                 const grouped = {};
                 const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+                const prodField = isDaily ? 'productividad_hora' : 'productividad';
 
                 filteredData.forEach(item => {
                     let key, label;
-                    if (periodView === 'Mensual') {
+                    if (isDaily) {
+                        key = item.dia;
+                        const d = new Date(item.dia + 'T12:00:00');
+                        label = d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' });
+                    } else if (periodView === 'Mensual') {
                         const mesNum = mesToNum[item.mes] || 0;
                         key = item.anio + '-' + String(mesNum).padStart(2, '0');
                         label = meses[mesNum] + ' ' + item.anio;
@@ -816,7 +845,7 @@
                         label = 'S' + item.semana + ' ' + item.anio;
                     }
                     if (!grouped[key]) grouped[key] = { key, label, productividad: 0, count: 0 };
-                    grouped[key].productividad += parseFloat(item.productividad || 0);
+                    grouped[key].productividad += parseFloat(item[prodField] || 0);
                     grouped[key].count += 1;
                 });
 
@@ -826,55 +855,64 @@
                         fecha: item.label,
                         'Pallets/Hora': parseFloat((item.productividad / item.count).toFixed(2))
                     }));
-            }, [filteredData, periodView]);
+            }, [filteredData, periodView, isDaily]);
 
             // Prepare Chart Data - Por Cargo
             const cargoData = useMemo(() => {
+                const prodField = isDaily ? 'productividad_hora' : 'productividad';
                 const groupedByCargo = {};
                 filteredData.forEach(item => {
                     if (!groupedByCargo[item.cargo]) groupedByCargo[item.cargo] = { cargo: item.cargo, productividad: 0, count: 0 };
-                    groupedByCargo[item.cargo].productividad += parseFloat(item.productividad || 0);
+                    groupedByCargo[item.cargo].productividad += parseFloat(item[prodField] || 0);
                     groupedByCargo[item.cargo].count += 1;
                 });
                 return Object.values(groupedByCargo)
                     .map(item => ({ name: item.cargo, 'Pallets/Hora': parseFloat((item.productividad / item.count).toFixed(2)) }))
                     .sort((a, b) => b['Pallets/Hora'] - a['Pallets/Hora']);
-            }, [filteredData]);
+            }, [filteredData, isDaily]);
 
             // Prepare Ranking Data
             const rankingData = useMemo(() => {
+                const prodField = isDaily ? 'productividad_hora' : 'productividad';
                 const groupedByOperator = {};
                 filteredData.forEach(item => {
                     const key = item.nombre;
                     if (!groupedByOperator[key]) {
                         groupedByOperator[key] = { nombre: item.nombre, cargo: item.cargo, productividad: 0, periodos: new Set(), count: 0 };
                     }
-                    groupedByOperator[key].productividad += parseFloat(item.productividad || 0);
-                    groupedByOperator[key].periodos.add('S' + item.semana + '-' + item.anio);
+                    groupedByOperator[key].productividad += parseFloat(item[prodField] || 0);
+                    if (isDaily) {
+                        groupedByOperator[key].periodos.add(item.dia);
+                    } else {
+                        groupedByOperator[key].periodos.add('S' + item.semana + '-' + item.anio);
+                    }
                     groupedByOperator[key].count += 1;
                 });
                 return Object.values(groupedByOperator)
                     .map(item => ({
                         ...item,
                         productividad_promedio: item.count > 0 ? item.productividad / item.count : 0,
-                        semanas_trabajadas: item.periodos.size
+                        periodos_trabajados: item.periodos.size
                     }))
                     .sort((a, b) => b.productividad_promedio - a.productividad_promedio);
-            }, [filteredData]);
+            }, [filteredData, isDaily]);
 
-            // Get unique cargos
+            // Get unique cargos (from both sources)
             const uniqueCargos = useMemo(() => {
-                const cargos = new Set(allData.map(item => item.cargo));
+                const cargos = new Set();
+                weeklyData.forEach(item => cargos.add(item.cargo));
+                dailyData.forEach(item => cargos.add(item.cargo));
                 return Array.from(cargos).sort();
-            }, [allData]);
+            }, [weeklyData, dailyData]);
 
-            // Get unique operarios (filtered by cargo)
+            // Get unique operarios (filtered by cargo, from both sources)
             const uniqueOperarios = useMemo(() => {
-                const filtered = selectedCargo !== 'Todos' ? allData.filter(item => item.cargo === selectedCargo) : allData;
+                const allItems = [...weeklyData, ...dailyData];
+                const filtered = selectedCargo !== 'Todos' ? allItems.filter(item => item.cargo === selectedCargo) : allItems;
                 const ops = new Map();
                 filtered.forEach(item => { if (!ops.has(item.nombre)) ops.set(item.nombre, item.nombre); });
                 return Array.from(ops.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-            }, [allData, selectedCargo]);
+            }, [weeklyData, dailyData, selectedCargo]);
 
             const COLORS = ['#0E245E', '#192853', '#10B981', '#5E6373', '#AEAEB8'];
 
@@ -956,6 +994,7 @@
                                     value={periodView}
                                     onChange={(e) => setPeriodView(e.target.value)}
                                 >
+                                    <option value="Diario">Diario</option>
                                     <option value="Semanal">Semanal</option>
                                     <option value="Mensual">Mensual</option>
                                 </select>
@@ -976,9 +1015,9 @@
                                 subtitle="En periodo seleccionado"
                             />
                             <KPICard
-                                label="Semanas con Data"
-                                value={kpis.semanasConData}
-                                subtitle="Semanas registradas"
+                                label={isDaily ? "Dias con Data" : "Semanas con Data"}
+                                value={kpis.periodCount}
+                                subtitle={isDaily ? "Dias registrados" : "Semanas registradas"}
                             />
                             <KPICard
                                 label="Registros"
@@ -1062,6 +1101,7 @@
                                 onPageChange={setCurrentPage}
                                 searchTerm={searchTerm}
                                 onSearchChange={setSearchTerm}
+                                isDaily={isDaily}
                             />
                         )}
 
