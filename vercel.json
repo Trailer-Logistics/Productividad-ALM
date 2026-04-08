@@ -4,6 +4,7 @@
   "framework": null,
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
-    { "source": "/dashboard", "destination": "/dashboard.html" }
+    { "source": "/dashboard", "destination": "/dashboard.html" },
+    { "source": "/operarios", "destination": "/operarios.html" }
   ]
 }
