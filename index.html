@@ -464,6 +464,13 @@ function mapColumns(rows, type) {
             }
         }
         mapped.semana_carga = semanaCarga;
+
+        // Asegurar que TODAS las columnas DB esten presentes (PostgREST exige keys uniformes)
+        const allDbCols = new Set(Object.values(colMap));
+        for (const dbCol of allDbCols) {
+            if (!(dbCol in mapped)) mapped[dbCol] = null;
+        }
+
         return mapped;
     }).filter(row => {
         // Solo filas con datos clave
