@@ -122,6 +122,30 @@
         /* Info box */
         .info-box { background: rgba(25,40,83,0.04); border: 1px solid rgba(25,40,83,0.12); border-radius: 10px; padding: 14px 18px; margin-bottom: 24px; font-size: 12px; color: var(--slate); line-height: 1.6; }
         .info-box strong { color: var(--navy); }
+
+        /* Nav links */
+        .nav-links { display: flex; gap: 12px; }
+        .nav-links a { color: var(--white); font-size: 12px; text-decoration: none; padding: 6px 14px; border-radius: 6px; background: rgba(255,255,255,0.1); transition: background 0.2s; }
+        .nav-links a:hover { background: rgba(255,255,255,0.2); }
+        .nav-links a.active { background: rgba(255,255,255,0.25); font-weight: 600; }
+
+        /* Data status panel */
+        .data-status { background: var(--white); border-radius: 12px; border: 1px solid rgba(25,40,83,0.1); padding: 20px 24px; margin-bottom: 24px; }
+        .data-status-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+        .data-status-title { font-size: 14px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 8px; }
+        .data-status-title svg { width: 18px; height: 18px; }
+        .data-status-refresh { background: none; border: 1px solid var(--silver); border-radius: 6px; padding: 4px 10px; font-size: 11px; color: var(--slate); cursor: pointer; transition: all 0.2s; }
+        .data-status-refresh:hover { border-color: var(--navy); color: var(--navy); }
+        .data-status-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 700px) { .data-status-grid { grid-template-columns: 1fr; } }
+        .data-status-item { background: var(--ice-grey); border-radius: 8px; padding: 14px 16px; }
+        .data-status-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--slate); margin-bottom: 4px; }
+        .data-status-value { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; color: var(--navy); }
+        .data-status-detail { font-size: 11px; color: var(--slate); margin-top: 4px; }
+        .data-status-empty { color: var(--silver); font-weight: 400; font-size: 12px; font-family: 'Montserrat', sans-serif; }
+        .data-status-ok { color: var(--success); }
+        .data-status-bar { height: 4px; border-radius: 2px; background: var(--ice-grey); margin-top: 8px; overflow: hidden; }
+        .data-status-bar-fill { height: 100%; border-radius: 2px; background: var(--navy); }
     </style>
 </head>
 <body>
@@ -132,6 +156,11 @@
         <div class="header-logo">TL</div>
         <h1>Trailer Logistics</h1>
     </div>
+    <div class="nav-links">
+        <a href="index.html" class="active">Carga</a>
+        <a href="dashboard.html">Dashboard</a>
+        <a href="operarios.html">Operarios</a>
+    </div>
     <div class="header-status">
         <div class="status-dot" id="statusDot"></div>
         <span id="statusText">Conectando...</span>
@@ -141,6 +170,34 @@
 <div class="main">
     <h2 class="page-title">Carga de Datos de Productividad</h2>
     <p class="page-subtitle">Sube los archivos Excel o CSV del WMS — la productividad se calcula y almacena automaticamente</p>
+
+    <!-- Estado de Data Cargada -->
+    <div class="data-status" id="dataStatusPanel">
+        <div class="data-status-header">
+            <div class="data-status-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+                Estado de Data
+            </div>
+            <button class="data-status-refresh" onclick="loadDataStatus()">Actualizar</button>
+        </div>
+        <div class="data-status-grid">
+            <div class="data-status-item">
+                <div class="data-status-label">LPN Cajas</div>
+                <div class="data-status-value" id="dsCajas"><span class="data-status-empty">Cargando...</span></div>
+                <div class="data-status-detail" id="dsCajasDetail"></div>
+            </div>
+            <div class="data-status-item">
+                <div class="data-status-label">LPN Destino</div>
+                <div class="data-status-value" id="dsDestino"><span class="data-status-empty">Cargando...</span></div>
+                <div class="data-status-detail" id="dsDestinoDetail"></div>
+            </div>
+            <div class="data-status-item">
+                <div class="data-status-label">Productividad Calculada</div>
+                <div class="data-status-value" id="dsProd"><span class="data-status-empty">Cargando...</span></div>
+                <div class="data-status-detail" id="dsProdDetail"></div>
+            </div>
+        </div>
+    </div>
 
     <div class="info-box">
         <strong>Proceso automatico:</strong> Al subir los archivos, el sistema: 1) Carga los datos (ignorando duplicados), 2) Calcula y guarda la productividad diaria por operario, 3) Limpia data cruda mayor a 2 meses.<br>
@@ -624,6 +681,7 @@ async function startUpload() {
     btn.classList.remove('uploading'); btn.textContent = 'Subir y Calcular'; btn.disabled = true;
     for (const t of types) { files[t] = null; parsedData[t] = null; }
     updateFileCount();
+    loadDataStatus();
 }
 
 // ============================================================
@@ -659,6 +717,55 @@ async function checkConnection() {
 }
 checkConnection();
 
+// ============================================================
+// ESTADO DE DATA CARGADA
+// ============================================================
+async function loadDataStatus() {
+    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY };
+    const fmtDate = (d) => {
+        const dt = new Date(d + 'T12:00:00');
+        return dt.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+    const fmtNum = (n) => new Intl.NumberFormat('es-CL').format(n);
+
+    async function queryTable(table, dateCol) {
+        try {
+            const base = SUPABASE_URL + '/rest/v1/' + encodeURIComponent(table);
+            const [rMax, rMin, rCount] = await Promise.all([
+                fetch(base + '?select=' + dateCol + '&order=' + dateCol + '.desc&limit=1', { headers }),
+                fetch(base + '?select=' + dateCol + '&order=' + dateCol + '.asc&limit=1', { headers }),
+                fetch(base + '?select=*&limit=0', { headers: { ...headers, 'Prefer': 'count=exact' } })
+            ]);
+            const maxData = await rMax.json();
+            const minData = await rMin.json();
+            const range = rCount.headers.get('content-range');
+            const total = range ? parseInt(range.split('/')[1]) : 0;
+            if (maxData.length === 0) return { empty: true };
+            return { empty: false, min: minData[0][dateCol], max: maxData[0][dateCol], total };
+        } catch(e) { return { error: e.message }; }
+    }
+
+    function renderStatus(data, elVal, elDetail) {
+        if (data.error) {
+            elVal.innerHTML = '<span class="data-status-empty">Error al consultar</span>';
+        } else if (data.empty) {
+            elVal.innerHTML = '<span class="data-status-empty">Sin datos cargados</span>';
+        } else {
+            elVal.innerHTML = fmtDate(data.min) + ' <span style="color:var(--silver);font-weight:400">→</span> ' + fmtDate(data.max);
+            elDetail.textContent = fmtNum(data.total) + ' registros';
+        }
+    }
+
+    const [cajas, destino, prod] = await Promise.all([
+        queryTable('3-historial_cajas', 'dia'),
+        queryTable('3-historial_destino', 'dia'),
+        queryTable('3-productividad_final', 'dia')
+    ]);
+    renderStatus(cajas, document.getElementById('dsCajas'), document.getElementById('dsCajasDetail'));
+    renderStatus(destino, document.getElementById('dsDestino'), document.getElementById('dsDestinoDetail'));
+    renderStatus(prod, document.getElementById('dsProd'), document.getElementById('dsProdDetail'));
+}
+loadDataStatus();
 
 </script>
 </body>
