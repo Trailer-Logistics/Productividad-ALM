@@ -708,39 +708,61 @@
         // Main Dashboard Component
         const Dashboard = () => {
             const [allData, setAllData] = useState([]);
+            const [weeklyData, setWeeklyData] = useState([]);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             const [dateFrom, setDateFrom] = useState('');
             const [dateTo, setDateTo] = useState('');
             const [selectedCargo, setSelectedCargo] = useState('Todos');
             const [selectedOperario, setSelectedOperario] = useState('Todos');
-            const [periodView, setPeriodView] = useState('Diario');
+            const [periodView, setPeriodView] = useState('Semanal');
             const [currentPage, setCurrentPage] = useState(1);
             const [searchTerm, setSearchTerm] = useState('');
 
-            // Fetch Data on Mount
+            // Helper: get ISO week start date from year + week number
+            const weekToDate = (anio, semana) => {
+                const jan1 = new Date(anio, 0, 1);
+                const days = (semana - 1) * 7;
+                const weekStart = new Date(jan1.getTime() + days * 86400000);
+                // Adjust to Monday
+                const day = weekStart.getDay();
+                const diff = day === 0 ? -6 : 1 - day;
+                weekStart.setDate(weekStart.getDate() + diff);
+                return weekStart.toISOString().split('T')[0];
+            };
+
+            // Fetch Data on Mount — both tables
             useEffect(() => {
                 const fetchData = async () => {
                     try {
                         setLoading(true);
                         setError(null);
 
-                        let query = supabase
+                        // Fetch daily data (productividad_final)
+                        const { data: dailyData, error: err1 } = await supabase
                             .from('3-productividad_final')
                             .select('*')
                             .order('dia', { ascending: true });
+                        if (err1) throw err1;
 
-                        const { data, error: supabaseError } = await query;
+                        // Fetch weekly historical data (productividad_semanal)
+                        const { data: wkData, error: err2 } = await supabase
+                            .from('3-productividad_semanal')
+                            .select('*')
+                            .order('anio,semana', { ascending: true });
+                        if (err2) throw err2;
 
-                        if (supabaseError) throw supabaseError;
+                        setAllData(dailyData || []);
+                        setWeeklyData(wkData || []);
 
-                        setAllData(data || []);
-
-                        // Set default date range to full data range
-                        if (data && data.length > 0) {
-                            const dates = data.map(d => d.dia).sort();
-                            setDateFrom(dates[0]);
-                            setDateTo(dates[dates.length - 1]);
+                        // Set default date range covering ALL data
+                        const allDates = [];
+                        if (dailyData) dailyData.forEach(d => allDates.push(d.dia));
+                        if (wkData) wkData.forEach(d => allDates.push(weekToDate(d.anio, d.semana)));
+                        allDates.sort();
+                        if (allDates.length > 0) {
+                            setDateFrom(allDates[0]);
+                            setDateTo(allDates[allDates.length - 1]);
                         }
                     } catch (err) {
                         console.error('Error fetching data:', err);
@@ -753,7 +775,7 @@
                 fetchData();
             }, []);
 
-            // Filter Data
+            // Filter daily data
             const filteredData = useMemo(() => {
                 return allData.filter(item => {
                     const itemDate = new Date(item.dia);
@@ -769,34 +791,62 @@
                 });
             }, [allData, dateFrom, dateTo, selectedCargo, selectedOperario]);
 
-            // Calculate KPIs
+            // Filter weekly historical data
+            const filteredWeekly = useMemo(() => {
+                return weeklyData.filter(item => {
+                    const itemDate = new Date(weekToDate(item.anio, item.semana));
+                    const fromDate = dateFrom ? new Date(dateFrom) : null;
+                    const toDate = dateTo ? new Date(dateTo) : null;
+
+                    if (fromDate && itemDate < fromDate) return false;
+                    if (toDate && itemDate > toDate) return false;
+                    if (selectedCargo !== 'Todos' && item.cargo !== selectedCargo) return false;
+                    if (selectedOperario !== 'Todos' && item.nombre !== selectedOperario) return false;
+
+                    return true;
+                });
+            }, [weeklyData, dateFrom, dateTo, selectedCargo, selectedOperario]);
+
+            // Calculate KPIs — combining daily + weekly data
             const kpis = useMemo(() => {
-                if (filteredData.length === 0) {
-                    return {
-                        avgProductivity: 0,
-                        totalMovements: 0,
-                        activeOperators: 0,
-                        daysWithData: 0
-                    };
+                const hasDaily = filteredData.length > 0;
+                const hasWeekly = filteredWeekly.length > 0;
+
+                if (!hasDaily && !hasWeekly) {
+                    return { avgProductivity: 0, totalMovements: 0, activeOperators: 0, daysWithData: 0 };
                 }
 
-                const avgProductivity = filteredData.reduce((sum, item) => sum + (item.productividad_hora || 0), 0) / filteredData.length;
+                // Productivity average: combine both sources
+                let prodSum = 0, prodCount = 0;
+                filteredData.forEach(item => { prodSum += (item.productividad_hora || 0); prodCount++; });
+                filteredWeekly.forEach(item => { prodSum += parseFloat(item.productividad || 0); prodCount++; });
+                const avgProductivity = prodCount > 0 ? prodSum / prodCount : 0;
+
+                // Total movements from daily data
                 const totalMovements = filteredData.reduce((sum, item) => sum + (item.total_movimientos || 0), 0);
-                const activeOperators = new Set(filteredData.map(item => item.usuario)).size;
-                const daysWithData = new Set(filteredData.map(item => item.dia)).size;
 
-                return {
-                    avgProductivity,
-                    totalMovements,
-                    activeOperators,
-                    daysWithData
-                };
-            }, [filteredData]);
+                // Active operators: combine both
+                const ops = new Set();
+                filteredData.forEach(item => ops.add(item.usuario || item.nombre));
+                filteredWeekly.forEach(item => ops.add(item.nombre));
+                const activeOperators = ops.size;
 
-            // Prepare Chart Data - Tendencia (respeta periodView)
+                // Periods with data
+                const periods = new Set();
+                filteredData.forEach(item => periods.add(item.dia));
+                filteredWeekly.forEach(item => periods.add('S' + item.semana + '-' + item.anio));
+                const daysWithData = periods.size;
+
+                return { avgProductivity, totalMovements, activeOperators, daysWithData };
+            }, [filteredData, filteredWeekly]);
+
+            // Prepare Chart Data - Tendencia (respeta periodView, combina ambas fuentes)
             const tendenciaData = useMemo(() => {
                 const grouped = {};
+                const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+                const mesToNum = {'Enero':1,'Febrero':2,'Marzo':3,'Abril':4,'Mayo':5,'Junio':6,'Julio':7,'Agosto':8,'Septiembre':9,'Octubre':10,'Noviembre':11,'Diciembre':12};
 
+                // Daily data
                 filteredData.forEach(item => {
                     let key, label;
                     if (periodView === 'Semanal') {
@@ -804,18 +854,33 @@
                         label = 'S' + item.semana + ' ' + item.anio;
                     } else if (periodView === 'Mensual') {
                         key = item.anio + '-' + String(item.mes).padStart(2, '0');
-                        const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
                         label = meses[item.mes] + ' ' + item.anio;
                     } else {
                         key = item.dia;
                         label = formatDate(item.dia);
                     }
-                    if (!grouped[key]) {
-                        grouped[key] = { key, label, productividad: 0, count: 0 };
-                    }
+                    if (!grouped[key]) grouped[key] = { key, label, productividad: 0, count: 0 };
                     grouped[key].productividad += item.productividad_hora || 0;
                     grouped[key].count += 1;
                 });
+
+                // Weekly historical data (only for Semanal/Mensual views)
+                if (periodView === 'Semanal' || periodView === 'Mensual') {
+                    filteredWeekly.forEach(item => {
+                        let key, label;
+                        if (periodView === 'Semanal') {
+                            key = item.anio + '-S' + String(item.semana).padStart(2, '0');
+                            label = 'S' + item.semana + ' ' + item.anio;
+                        } else {
+                            const mesNum = mesToNum[item.mes] || 0;
+                            key = item.anio + '-' + String(mesNum).padStart(2, '0');
+                            label = meses[mesNum] + ' ' + item.anio;
+                        }
+                        if (!grouped[key]) grouped[key] = { key, label, productividad: 0, count: 0 };
+                        grouped[key].productividad += parseFloat(item.productividad || 0);
+                        grouped[key].count += 1;
+                    });
+                }
 
                 return Object.values(grouped)
                     .sort((a, b) => a.key.localeCompare(b.key))
@@ -823,21 +888,21 @@
                         fecha: item.label,
                         'Pallets/Hora': parseFloat((item.productividad / item.count).toFixed(2))
                     }));
-            }, [filteredData, periodView]);
+            }, [filteredData, filteredWeekly, periodView]);
 
-            // Prepare Chart Data - Por Cargo
+            // Prepare Chart Data - Por Cargo (combina ambas fuentes)
             const cargoData = useMemo(() => {
                 const groupedByCargo = {};
 
                 filteredData.forEach(item => {
-                    if (!groupedByCargo[item.cargo]) {
-                        groupedByCargo[item.cargo] = {
-                            cargo: item.cargo,
-                            productividad: 0,
-                            count: 0
-                        };
-                    }
+                    if (!groupedByCargo[item.cargo]) groupedByCargo[item.cargo] = { cargo: item.cargo, productividad: 0, count: 0 };
                     groupedByCargo[item.cargo].productividad += item.productividad_hora || 0;
+                    groupedByCargo[item.cargo].count += 1;
+                });
+
+                filteredWeekly.forEach(item => {
+                    if (!groupedByCargo[item.cargo]) groupedByCargo[item.cargo] = { cargo: item.cargo, productividad: 0, count: 0 };
+                    groupedByCargo[item.cargo].productividad += parseFloat(item.productividad || 0);
                     groupedByCargo[item.cargo].count += 1;
                 });
 
@@ -847,7 +912,7 @@
                         'Pallets/Hora': parseFloat((item.productividad / item.count).toFixed(2))
                     }))
                     .sort((a, b) => b['Pallets/Hora'] - a['Pallets/Hora']);
-            }, [filteredData]);
+            }, [filteredData, filteredWeekly]);
 
             // Prepare Chart Data - Distribucion (respeta periodView)
             const distribucionData = useMemo(() => {
@@ -877,56 +942,61 @@
                     .sort((a, b) => a.key.localeCompare(b.key));
             }, [filteredData, periodView]);
 
-            // Prepare Ranking Data
+            // Prepare Ranking Data (combina ambas fuentes)
             const rankingData = useMemo(() => {
                 const groupedByOperator = {};
 
                 filteredData.forEach(item => {
-                    if (!groupedByOperator[item.usuario]) {
-                        groupedByOperator[item.usuario] = {
-                            usuario: item.usuario,
-                            nombre: item.nombre,
-                            cargo: item.cargo,
-                            productividad: 0,
-                            total_movimientos: 0,
-                            dias: new Set(),
-                            count: 0
-                        };
+                    const key = item.usuario || item.nombre;
+                    if (!groupedByOperator[key]) {
+                        groupedByOperator[key] = { usuario: item.usuario, nombre: item.nombre, cargo: item.cargo, productividad: 0, total_movimientos: 0, periodos: new Set(), count: 0 };
                     }
-                    groupedByOperator[item.usuario].productividad += item.productividad_hora || 0;
-                    groupedByOperator[item.usuario].total_movimientos += item.total_movimientos || 0;
-                    groupedByOperator[item.usuario].dias.add(item.dia);
-                    groupedByOperator[item.usuario].count += 1;
+                    groupedByOperator[key].productividad += item.productividad_hora || 0;
+                    groupedByOperator[key].total_movimientos += item.total_movimientos || 0;
+                    groupedByOperator[key].periodos.add(item.dia);
+                    groupedByOperator[key].count += 1;
+                });
+
+                filteredWeekly.forEach(item => {
+                    const key = item.nombre;
+                    if (!groupedByOperator[key]) {
+                        groupedByOperator[key] = { usuario: key, nombre: item.nombre, cargo: item.cargo, productividad: 0, total_movimientos: 0, periodos: new Set(), count: 0 };
+                    }
+                    groupedByOperator[key].productividad += parseFloat(item.productividad || 0);
+                    groupedByOperator[key].periodos.add('S' + item.semana + '-' + item.anio);
+                    groupedByOperator[key].count += 1;
                 });
 
                 return Object.values(groupedByOperator)
                     .map(item => ({
                         ...item,
                         productividad_promedio: item.count > 0 ? item.productividad / item.count : 0,
-                        dias_trabajados: item.dias.size
+                        dias_trabajados: item.periodos.size
                     }))
                     .sort((a, b) => b.productividad_promedio - a.productividad_promedio);
-            }, [filteredData]);
+            }, [filteredData, filteredWeekly]);
 
-            // Get unique cargos
+            // Get unique cargos (from both sources)
             const uniqueCargos = useMemo(() => {
-                const cargos = new Set(allData.map(item => item.cargo));
+                const cargos = new Set();
+                allData.forEach(item => cargos.add(item.cargo));
+                weeklyData.forEach(item => cargos.add(item.cargo));
                 return Array.from(cargos).sort();
-            }, [allData]);
+            }, [allData, weeklyData]);
 
-            // Get unique operarios (filtered by selected cargo)
+            // Get unique operarios (from both sources, filtered by cargo)
             const uniqueOperarios = useMemo(() => {
-                const filtered = selectedCargo !== 'Todos'
-                    ? allData.filter(item => item.cargo === selectedCargo)
-                    : allData;
                 const ops = new Map();
-                filtered.forEach(item => {
-                    if (!ops.has(item.usuario)) {
-                        ops.set(item.usuario, item.nombre || item.usuario);
-                    }
+                const filtDaily = selectedCargo !== 'Todos' ? allData.filter(item => item.cargo === selectedCargo) : allData;
+                filtDaily.forEach(item => {
+                    if (!ops.has(item.usuario || item.nombre)) ops.set(item.usuario || item.nombre, item.nombre || item.usuario);
+                });
+                const filtWeekly = selectedCargo !== 'Todos' ? weeklyData.filter(item => item.cargo === selectedCargo) : weeklyData;
+                filtWeekly.forEach(item => {
+                    if (!ops.has(item.nombre)) ops.set(item.nombre, item.nombre);
                 });
                 return Array.from(ops.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-            }, [allData, selectedCargo]);
+            }, [allData, weeklyData, selectedCargo]);
 
             const COLORS = ['#0E245E', '#192853', '#10B981', '#5E6373', '#AEAEB8'];
 
