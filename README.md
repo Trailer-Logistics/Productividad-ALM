@@ -14,3 +14,5 @@ Plataforma web que permite cargar datos del WMS, calcular automaticamente la pro
 
 ---
 Desarrollado para Trailer Logistics | 2026
+
+<!-- deploy 1775677305 -->
