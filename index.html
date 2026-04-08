@@ -508,6 +508,7 @@ function setProgressState(id, state, detail, pct) {
     const bar = document.getElementById('progBar-' + id);
     const detailEl = document.getElementById('progDetail-' + id);
     const pctEl = document.getElementById('progPct-' + id);
+    if (!icon) return; // Safety: skip if element doesn't exist
     if (state === 'running') {
         icon.className = 'progress-icon running';
         icon.innerHTML = '<div class="spinner"></div>';
@@ -546,8 +547,9 @@ async function startUpload() {
     types.forEach(function(t) {
         addProgressItem(t, LABEL_MAP[t], parsedData[t].length.toLocaleString('es-CL') + ' filas pendientes');
     });
-    addProgressItem('calc', 'Calcular productividad diaria', 'Esperando carga de datos...');
-    addProgressItem('clean', 'Limpieza de data antigua (>2 meses)', 'Esperando calculo...');
+    addProgressItem('calc', 'Calcular productividad diaria', 'Pendiente...');
+    addProgressItem('weekly', 'Actualizar resumen semanal', 'Pendiente...');
+    addProgressItem('clean', 'Limpieza de data antigua (>2 meses)', 'Pendiente...');
 
     let totalInserted = 0, totalErrors = 0;
     const results = {};
