@@ -182,7 +182,7 @@
         </div>
         <div class="data-status-grid">
             <div class="data-status-item">
-                <div class="data-status-label">LPN Cajas</div>
+                <div class="data-status-label">Historial Pallets</div>
                 <div class="data-status-value" id="dsCajas"><span class="data-status-empty">Cargando...</span></div>
                 <div class="data-status-detail" id="dsCajasDetail"></div>
             </div>
@@ -211,7 +211,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 9h20"/><path d="M9 21V9"/></svg>
             </div>
             <div class="card-label">Tabla: 3-historial_cajas</div>
-            <div class="card-title">Historial LPN Cajas</div>
+            <div class="card-title">Historial Pallets</div>
             <div class="card-desc" id="descCajas">Arrastra el Excel o CSV, o haz click para seleccionar</div>
             <div class="card-filename" id="filenameCajas"></div>
             <div class="card-stats" id="statsCajas"></div>
@@ -225,7 +225,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
             </div>
             <div class="card-label">Tabla: 3-historial_destino</div>
-            <div class="card-title">Historial LPN Destino</div>
+            <div class="card-title">Historial Destino</div>
             <div class="card-desc" id="descDestino">Arrastra el Excel o CSV, o haz click para seleccionar</div>
             <div class="card-filename" id="filenameDestino"></div>
             <div class="card-stats" id="statsDestino"></div>
@@ -309,8 +309,8 @@ const TABLE_MAP = {
     destino: '3-historial_destino',
 };
 const LABEL_MAP = {
-    cajas: 'Historial LPN Cajas',
-    destino: 'Historial LPN Destino',
+    cajas: 'Historial Pallets',
+    destino: 'Historial Destino',
 };
 const CARD_MAP = {
     cajas: 'cardCajas',
@@ -653,7 +653,7 @@ async function startUpload() {
         const totalElim = cajasElim + destElim;
         if (totalElim > 0) {
             setProgressState('clean', 'done',
-                cajasElim.toLocaleString('es-CL') + ' cajas + ' + destElim.toLocaleString('es-CL') + ' destino eliminadas (antes de ' + cleanResult.fecha_limite + ')', 100);
+                cajasElim.toLocaleString('es-CL') + ' pallets + ' + destElim.toLocaleString('es-CL') + ' destino eliminados (antes de ' + cleanResult.fecha_limite + ')', 100);
             log('success', 'Limpieza: ' + totalElim.toLocaleString('es-CL') + ' registros antiguos eliminados (fecha limite: ' + cleanResult.fecha_limite + ')');
         } else {
             setProgressState('clean', 'done', 'Sin registros antiguos que eliminar', 100);
