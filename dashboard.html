@@ -717,6 +717,43 @@
             const [currentPage, setCurrentPage] = useState(1);
             const [searchTerm, setSearchTerm] = useState('');
             const [excludeWeekends, setExcludeWeekends] = useState(true);
+            const [recalculating, setRecalculating] = useState(false);
+
+            // Recalcular productividad desde la vista (incluye minutas)
+            const handleRecalculate = async () => {
+                if (recalculating) return;
+                try {
+                    setRecalculating(true);
+                    // Rango amplio para cubrir toda la data
+                    const { data: d1, error: e1 } = await supabase.rpc('fn_3_guardar_productividad', {
+                        p_fecha_desde: '2026-01-01',
+                        p_fecha_hasta: '2026-12-31'
+                    });
+                    if (e1) throw e1;
+
+                    const { data: d2, error: e2 } = await supabase.rpc('fn_3_actualizar_productividad_semanal', {
+                        p_fecha_desde: '2026-01-01',
+                        p_fecha_hasta: '2026-12-31'
+                    });
+                    if (e2) throw e2;
+
+                    // Refrescar datos
+                    const [weeklyRes, dailyRes] = await Promise.all([
+                        supabase.from('3-productividad_semanal').select('*').order('anio', { ascending: true }).order('semana', { ascending: true }),
+                        supabase.from('3-productividad_final').select('*').order('dia', { ascending: true })
+                    ]);
+                    if (weeklyRes.error) throw weeklyRes.error;
+                    if (dailyRes.error) throw dailyRes.error;
+                    setWeeklyData(weeklyRes.data || []);
+                    setDailyData(dailyRes.data || []);
+                    alert('Productividad recalculada: ' + (d1 || 0) + ' registros diarios, ' + (d2 || 0) + ' semanales.');
+                } catch (err) {
+                    console.error('Error recalculando:', err);
+                    alert('Error al recalcular: ' + (err.message || err));
+                } finally {
+                    setRecalculating(false);
+                }
+            };
 
             // Helper: get approximate date from year + week number
             const weekToDate = (anio, semana) => {
@@ -1023,6 +1060,27 @@
                                 </div>
                             )}
                             <button className="btn-apply">Aplicar Filtros</button>
+                            <button
+                                onClick={handleRecalculate}
+                                disabled={recalculating}
+                                style={{
+                                    padding: '0.6rem 1.2rem',
+                                    backgroundColor: recalculating ? '#9CA3AF' : '#10B981',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    fontWeight: 600,
+                                    fontSize: '0.85rem',
+                                    cursor: recalculating ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.4rem',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'background-color 0.3s ease'
+                                }}
+                            >
+                                {recalculating ? 'Recalculando...' : 'Recalcular Productividad'}
+                            </button>
                         </div>
 
                         {/* KPI Cards */}
