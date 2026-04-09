@@ -292,6 +292,11 @@
             height: 300px;
         }
 
+        .chart-container-large {
+            width: 100%;
+            height: 500px;
+        }
+
         /* Table */
         .table-section {
             background-color: #FFFEFF;
@@ -339,6 +344,10 @@
         .ranking-table thead {
             background-color: #F2F2F5;
             border-bottom: 2px solid #AEAEB8;
+        }
+
+        .ranking-table {
+            font-size: 0.85rem;
         }
 
         .ranking-table th {
@@ -901,19 +910,50 @@
                     }));
             }, [filteredData, periodView, isDaily]);
 
-            // Prepare Chart Data - Por Cargo
-            const cargoData = useMemo(() => {
+            // Prepare Chart Data - Tendencia por Cargo (líneas)
+            const CARGO_COLORS = ['#0E245E', '#10B981', '#EF4444', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+            const tendenciaCargoData = useMemo(() => {
+                const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
                 const prodField = isDaily ? 'productividad_hora' : 'productividad';
-                const groupedByCargo = {};
+                const grouped = {};
+                const cargosSet = new Set();
+
                 filteredData.forEach(item => {
-                    if (!groupedByCargo[item.cargo]) groupedByCargo[item.cargo] = { cargo: item.cargo, productividad: 0, count: 0 };
-                    groupedByCargo[item.cargo].productividad += parseFloat(item[prodField] || 0);
-                    groupedByCargo[item.cargo].count += 1;
+                    let key, label;
+                    if (isDaily) {
+                        key = item.dia;
+                        const d = new Date(item.dia + 'T12:00:00');
+                        label = d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' });
+                    } else if (periodView === 'Mensual') {
+                        const mesNum = mesToNum[item.mes] || 0;
+                        key = item.anio + '-' + String(mesNum).padStart(2, '0');
+                        label = meses[mesNum] + ' ' + item.anio;
+                    } else {
+                        key = item.anio + '-S' + String(item.semana).padStart(2, '0');
+                        label = 'S' + item.semana + ' ' + item.anio;
+                    }
+                    const cargo = item.cargo || 'Sin Cargo';
+                    cargosSet.add(cargo);
+                    if (!grouped[key]) grouped[key] = { key, fecha: label };
+                    if (!grouped[key]['_' + cargo]) grouped[key]['_' + cargo] = { sum: 0, count: 0 };
+                    grouped[key]['_' + cargo].sum += parseFloat(item[prodField] || 0);
+                    grouped[key]['_' + cargo].count += 1;
                 });
-                return Object.values(groupedByCargo)
-                    .map(item => ({ name: item.cargo, 'Pallets/Hora': parseFloat((item.productividad / item.count).toFixed(2)) }))
-                    .sort((a, b) => b['Pallets/Hora'] - a['Pallets/Hora']);
-            }, [filteredData, isDaily]);
+
+                const cargos = Array.from(cargosSet).sort();
+                const data = Object.values(grouped)
+                    .sort((a, b) => a.key.localeCompare(b.key))
+                    .map(item => {
+                        const row = { fecha: item.fecha };
+                        cargos.forEach(c => {
+                            const d = item['_' + c];
+                            row[c] = d ? parseFloat((d.sum / d.count).toFixed(2)) : null;
+                        });
+                        return row;
+                    });
+
+                return { data, cargos };
+            }, [filteredData, periodView, isDaily]);
 
             // Prepare Ranking Data
             const rankingData = useMemo(() => {
@@ -1140,77 +1180,49 @@
 
                         {/* Charts */}
                         {filteredData.length > 0 ? (
-                            <div className="charts-grid">
-                                {/* Tendencia Chart */}
-                                <div className="chart-card">
-                                    <h3 className="chart-title">Tendencia de Productividad</h3>
-                                    <div className="chart-container">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={tendenciaData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#AEAEB8" />
-                                                <XAxis dataKey="fecha" stroke="#5E6373" />
-                                                <YAxis stroke="#5E6373" />
-                                                <Tooltip
-                                                    contentStyle={{
-                                                        backgroundColor: '#FFFEFF',
-                                                        border: '1px solid #AEAEB8',
-                                                        borderRadius: '8px'
-                                                    }}
-                                                />
-                                                <ReferenceLine
-                                                    y={30}
-                                                    stroke="#EF4444"
-                                                    strokeWidth={2}
-                                                    strokeDasharray="8 4"
-                                                    label={{ value: 'Meta 30', position: 'right', fill: '#EF4444', fontWeight: 600, fontSize: 12 }}
-                                                />
-                                                <Line
-                                                    type="monotone"
-                                                    dataKey="Pallets/Hora"
-                                                    stroke="#0E245E"
-                                                    dot={{ fill: '#10B981', r: 4 }}
-                                                    activeDot={{ r: 6 }}
-                                                    strokeWidth={2}
-                                                />
-                                            </LineChart>
-                                        </ResponsiveContainer>
-                                    </div>
+                            <>
+                            {/* Tendencia General - Full Width */}
+                            <div className="chart-card" style={{ marginBottom: '2rem' }}>
+                                <h3 className="chart-title">Tendencia de Productividad General</h3>
+                                <div className="chart-container-large">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={tendenciaData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#AEAEB8" />
+                                            <XAxis dataKey="fecha" stroke="#5E6373" />
+                                            <YAxis stroke="#5E6373" />
+                                            <Tooltip contentStyle={{ backgroundColor: '#FFFEFF', border: '1px solid #AEAEB8', borderRadius: '8px' }} />
+                                            <ReferenceLine y={30} stroke="#EF4444" strokeWidth={2} strokeDasharray="8 4"
+                                                label={{ value: 'Meta 30', position: 'right', fill: '#EF4444', fontWeight: 600, fontSize: 12 }} />
+                                            <Line type="monotone" dataKey="Pallets/Hora" stroke="#0E245E"
+                                                dot={{ fill: '#10B981', r: 4 }} activeDot={{ r: 6 }} strokeWidth={2} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
                                 </div>
-
-                                {/* Cargo Chart */}
-                                <div className="chart-card">
-                                    <h3 className="chart-title">Productividad por Cargo</h3>
-                                    <div className="chart-container">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={cargoData} layout="vertical" margin={{ top: 5, right: 30, left: 150, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#AEAEB8" />
-                                                <XAxis type="number" stroke="#5E6373" />
-                                                <YAxis type="category" dataKey="name" stroke="#5E6373" width={140} />
-                                                <Tooltip
-                                                    contentStyle={{
-                                                        backgroundColor: '#FFFEFF',
-                                                        border: '1px solid #AEAEB8',
-                                                        borderRadius: '8px'
-                                                    }}
-                                                />
-                                                <ReferenceLine
-                                                    x={30}
-                                                    stroke="#EF4444"
-                                                    strokeWidth={2}
-                                                    strokeDasharray="8 4"
-                                                    label={{ value: 'Meta 30', position: 'top', fill: '#EF4444', fontWeight: 600, fontSize: 12 }}
-                                                />
-                                                <Bar dataKey="Pallets/Hora" fill="#0E245E" radius={[0, 8, 8, 0]}>
-                                                    {cargoData.map((entry, index) => (
-                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                    ))}
-                                                </Bar>
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
-
                             </div>
+
+                            {/* Tendencia por Cargo - Full Width */}
+                            <div className="chart-card" style={{ marginBottom: '2rem' }}>
+                                <h3 className="chart-title">Tendencia por Cargo</h3>
+                                <div className="chart-container-large">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={tendenciaCargoData.data} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#AEAEB8" />
+                                            <XAxis dataKey="fecha" stroke="#5E6373" />
+                                            <YAxis stroke="#5E6373" />
+                                            <Tooltip contentStyle={{ backgroundColor: '#FFFEFF', border: '1px solid #AEAEB8', borderRadius: '8px' }} />
+                                            <Legend />
+                                            <ReferenceLine y={30} stroke="#EF4444" strokeWidth={2} strokeDasharray="8 4"
+                                                label={{ value: 'Meta 30', position: 'right', fill: '#EF4444', fontWeight: 600, fontSize: 12 }} />
+                                            {tendenciaCargoData.cargos.map((cargo, i) => (
+                                                <Line key={cargo} type="monotone" dataKey={cargo}
+                                                    stroke={CARGO_COLORS[i % CARGO_COLORS.length]}
+                                                    dot={{ r: 3 }} activeDot={{ r: 5 }} strokeWidth={2} connectNulls />
+                                            ))}
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                            </>
                         ) : (
                             <div className="no-data">
                                 <div className="no-data-icon">📊</div>
@@ -1223,7 +1235,7 @@
                             <RankingTable
                                 data={rankingData}
                                 currentPage={currentPage}
-                                itemsPerPage={10}
+                                itemsPerPage={5}
                                 onPageChange={setCurrentPage}
                                 searchTerm={searchTerm}
                                 onSearchChange={setSearchTerm}
