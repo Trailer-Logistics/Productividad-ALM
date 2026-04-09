@@ -1158,11 +1158,11 @@
                                                     }}
                                                 />
                                                 <ReferenceLine
-                                                    y={35}
+                                                    y={30}
                                                     stroke="#EF4444"
                                                     strokeWidth={2}
                                                     strokeDasharray="8 4"
-                                                    label={{ value: 'Meta 35', position: 'right', fill: '#EF4444', fontWeight: 600, fontSize: 12 }}
+                                                    label={{ value: 'Meta 30', position: 'right', fill: '#EF4444', fontWeight: 600, fontSize: 12 }}
                                                 />
                                                 <Line
                                                     type="monotone"
@@ -1192,6 +1192,13 @@
                                                         border: '1px solid #AEAEB8',
                                                         borderRadius: '8px'
                                                     }}
+                                                />
+                                                <ReferenceLine
+                                                    x={30}
+                                                    stroke="#EF4444"
+                                                    strokeWidth={2}
+                                                    strokeDasharray="8 4"
+                                                    label={{ value: 'Meta 30', position: 'top', fill: '#EF4444', fontWeight: 600, fontSize: 12 }}
                                                 />
                                                 <Bar dataKey="Pallets/Hora" fill="#0E245E" radius={[0, 8, 8, 0]}>
                                                     {cargoData.map((entry, index) => (
