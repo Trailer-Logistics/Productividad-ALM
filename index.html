@@ -489,6 +489,8 @@ function mapColumns(rows, type) {
                 // Strings
                 if (['id_lpn','usuario','producto','empresa_prod','ubicacion','ubicacion_prev','ubic_actual','ubic_anterior','mar_qa'].includes(match.dbCol) && val !== null) {
                     val = String(val).trim();
+                    // Usuario siempre en mayúsculas para evitar duplicados
+                    if (match.dbCol === 'usuario') val = val.toUpperCase();
                 }
 
                 mapped[match.dbCol] = val;
