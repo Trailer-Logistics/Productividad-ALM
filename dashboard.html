@@ -1062,20 +1062,8 @@
                                 <select
                                     value={selectedOperario}
                                     onChange={(e) => {
-                                        const op = e.target.value;
-                                        setSelectedOperario(op);
+                                        setSelectedOperario(e.target.value);
                                         setCurrentPage(1);
-                                        // Si seleccionó un operario, expandir fechas a todo su rango
-                                        if (op !== 'Todos') {
-                                            const allDates = [];
-                                            dailyData.filter(d => d.nombre === op).forEach(d => allDates.push(d.dia));
-                                            weeklyData.filter(d => d.nombre === op).forEach(d => allDates.push(weekToDate(d.anio, d.semana)));
-                                            allDates.sort();
-                                            if (allDates.length > 0) {
-                                                setDateFrom(allDates[0]);
-                                                setDateTo(allDates[allDates.length - 1]);
-                                            }
-                                        }
                                     }}
                                 >
                                     <option value="Todos">Todos</option>
