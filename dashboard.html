@@ -716,6 +716,7 @@
             const [periodView, setPeriodView] = useState('Semanal');
             const [currentPage, setCurrentPage] = useState(1);
             const [searchTerm, setSearchTerm] = useState('');
+            const [excludeWeekends, setExcludeWeekends] = useState(true);
 
             // Helper: get approximate date from year + week number
             const weekToDate = (anio, semana) => {
@@ -784,7 +785,7 @@
             const filteredData = useMemo(() => {
                 return sourceData.filter(item => {
                     const itemDate = isDaily
-                        ? new Date(item.dia)
+                        ? new Date(item.dia + 'T12:00:00')
                         : new Date(weekToDate(item.anio, item.semana));
                     const fromDate = dateFrom ? new Date(dateFrom) : null;
                     const toDate = dateTo ? new Date(dateTo) : null;
@@ -794,9 +795,15 @@
                     if (selectedCargo !== 'Todos' && item.cargo !== selectedCargo) return false;
                     if (selectedOperario !== 'Todos' && item.nombre !== selectedOperario) return false;
 
+                    // Excluir fines de semana en vista diaria
+                    if (isDaily && excludeWeekends) {
+                        const dayOfWeek = itemDate.getDay(); // 0=domingo, 6=sabado
+                        if (dayOfWeek === 0 || dayOfWeek === 6) return false;
+                    }
+
                     return true;
                 });
-            }, [sourceData, isDaily, dateFrom, dateTo, selectedCargo, selectedOperario]);
+            }, [sourceData, isDaily, dateFrom, dateTo, selectedCargo, selectedOperario, excludeWeekends]);
 
             // Calculate KPIs
             const kpis = useMemo(() => {
@@ -999,6 +1006,22 @@
                                     <option value="Mensual">Mensual</option>
                                 </select>
                             </div>
+                            {isDaily && (
+                                <div className="filter-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingTop: '1.4rem' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={excludeWeekends}
+                                            onChange={(e) => {
+                                                setExcludeWeekends(e.target.checked);
+                                                setCurrentPage(1);
+                                            }}
+                                            style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#192853' }}
+                                        />
+                                        Excluir Sab/Dom
+                                    </label>
+                                </div>
+                            )}
                             <button className="btn-apply">Aplicar Filtros</button>
                         </div>
 
