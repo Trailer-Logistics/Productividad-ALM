@@ -376,6 +376,16 @@ function removeFile(e, type) {
     log('info', 'Archivo removido de ' + LABEL_MAP[type]);
 }
 
+// Detectar tipo de archivo por columnas
+function detectFileType(columns) {
+    const cols = columns.map(c => c.toUpperCase().replace(/\./g, '').replace(/\s+/g, ' ').trim());
+    const hasCajas = cols.some(c => c === 'UBICACION' || c === 'UBICACION PREV' || c === 'MAR QA');
+    const hasDestino = cols.some(c => c === 'UBIC ACT' || c === 'UBIC ANT' || c === 'UBICACION ACTUAL' || c === 'UBICACION ANTERIOR');
+    if (hasCajas && !hasDestino) return 'cajas';
+    if (hasDestino && !hasCajas) return 'destino';
+    return null; // no se pudo determinar
+}
+
 function processFile(file, type) {
     files[type] = file;
     log('info', 'Leyendo ' + file.name + '...');
@@ -386,6 +396,19 @@ function processFile(file, type) {
             const wb = XLSX.read(data, { type: 'array', cellDates: true });
             const ws = wb.Sheets[wb.SheetNames[0]];
             const json = XLSX.utils.sheet_to_json(ws, { defval: null });
+
+            // Validar tipo de archivo vs card seleccionada
+            if (json.length > 0) {
+                const detectedType = detectFileType(Object.keys(json[0]));
+                if (detectedType && detectedType !== type) {
+                    const expected = LABEL_MAP[type];
+                    const detected = LABEL_MAP[detectedType];
+                    log('error', 'Archivo incorrecto: subiste un archivo de ' + detected + ' en la card de ' + expected + '. Arrastralo a la card correcta.');
+                    files[type] = null;
+                    alert('Este archivo es de ' + detected + ', no de ' + expected + '.\nArrastralo a la card de ' + detected + '.');
+                    return;
+                }
+            }
 
             const mapped = mapColumns(json, type);
             parsedData[type] = mapped;
