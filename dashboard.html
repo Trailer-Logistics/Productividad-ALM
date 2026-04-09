@@ -1036,7 +1036,26 @@
                                 <label>Vista por Periodo</label>
                                 <select
                                     value={periodView}
-                                    onChange={(e) => setPeriodView(e.target.value)}
+                                    onChange={(e) => {
+                                        const newView = e.target.value;
+                                        setPeriodView(newView);
+                                        setCurrentPage(1);
+                                        if (newView === 'Diario') {
+                                            const hoy = new Date().toISOString().split('T')[0];
+                                            setDateFrom(hoy);
+                                            setDateTo(hoy);
+                                        } else {
+                                            // Restaurar rango completo para semanal/mensual
+                                            const allDates = [];
+                                            weeklyData.forEach(d => allDates.push(weekToDate(d.anio, d.semana)));
+                                            dailyData.forEach(d => allDates.push(d.dia));
+                                            allDates.sort();
+                                            if (allDates.length > 0) {
+                                                setDateFrom(allDates[0]);
+                                                setDateTo(allDates[allDates.length - 1]);
+                                            }
+                                        }
+                                    }}
                                 >
                                     <option value="Diario">Diario</option>
                                     <option value="Semanal">Semanal</option>
