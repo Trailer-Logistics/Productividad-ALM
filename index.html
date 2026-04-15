@@ -348,6 +348,11 @@ let files = { cajas: null, destino: null };
 let parsedData = { cajas: null, destino: null };
 let uploading = false;
 
+function getSemanaCarga() {
+    const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    return months[new Date().getMonth()] + ' ' + new Date().getFullYear();
+}
+
 // ============================================================
 // DRAG & DROP / FILE SELECT
 // ============================================================
@@ -433,8 +438,7 @@ function processFile(file, type) {
 
 function mapColumns(rows, type) {
     const colMap = COLUMN_MAP[type];
-    const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-    const semanaCarga = months[new Date().getMonth()] + ' ' + new Date().getFullYear();
+    const semanaCarga = getSemanaCarga();
 
     // Log columnas del archivo para diagnostico
     if (rows.length > 0) {
@@ -719,7 +723,7 @@ async function startUpload() {
                         archivo: files[type] ? files[type].name : 'desconocido',
                         tipo_data: type,
                         registros: inserted,
-                        semana_carga: semanaCarga || null,
+                        semana_carga: getSemanaCarga(),
                     }),
                 });
             } catch(e) {}
@@ -822,7 +826,11 @@ function log(type, message) {
     const now = new Date().toLocaleTimeString('es-CL');
     const entry = document.createElement('div');
     entry.className = 'log-entry ' + type;
-    entry.innerHTML = '<span class="timestamp">[' + now + ']</span> ' + message;
+    const ts = document.createElement('span');
+    ts.className = 'timestamp';
+    ts.textContent = '[' + now + ']';
+    entry.appendChild(ts);
+    entry.appendChild(document.createTextNode(' ' + message));
     el.insertBefore(entry, el.firstChild);
 }
 

@@ -11,8 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
     <!-- React & ReactDOM -->
-    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
-    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 
     <!-- PropTypes -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
@@ -906,22 +906,23 @@
                 try {
                     setRecalculating(true);
                     // Rango amplio para cubrir toda la data
+                    const year = new Date().getFullYear();
                     const { data: d1, error: e1 } = await supabase.rpc('fn_3_guardar_productividad', {
-                        p_fecha_desde: '2026-01-01',
-                        p_fecha_hasta: '2026-12-31'
+                        p_fecha_desde: (year - 1) + '-01-01',
+                        p_fecha_hasta: year + '-12-31'
                     });
                     if (e1) throw e1;
 
                     const { data: d2, error: e2 } = await supabase.rpc('fn_3_actualizar_productividad_semanal', {
-                        p_fecha_desde: '2026-01-01',
-                        p_fecha_hasta: '2026-12-31'
+                        p_fecha_desde: (year - 1) + '-01-01',
+                        p_fecha_hasta: year + '-12-31'
                     });
                     if (e2) throw e2;
 
                     // Refrescar datos
                     const [weeklyRes, dailyRes] = await Promise.all([
-                        supabase.from('3-productividad_semanal').select('*').order('anio', { ascending: true }).order('semana', { ascending: true }),
-                        supabase.from('3-productividad_final').select('*').order('dia', { ascending: true })
+                        supabase.from('3-productividad_semanal').select('*').order('anio', { ascending: true }).order('semana', { ascending: true }).limit(5000),
+                        supabase.from('3-productividad_final').select('*').order('dia', { ascending: true }).limit(10000)
                     ]);
                     if (weeklyRes.error) throw weeklyRes.error;
                     if (dailyRes.error) throw dailyRes.error;
@@ -962,11 +963,13 @@
                                 .from('3-productividad_semanal')
                                 .select('*')
                                 .order('anio', { ascending: true })
-                                .order('semana', { ascending: true }),
+                                .order('semana', { ascending: true })
+                                .limit(5000),
                             supabase
                                 .from('3-productividad_final')
                                 .select('*')
                                 .order('dia', { ascending: true })
+                                .limit(10000)
                         ]);
 
                         if (weeklyRes.error) throw weeklyRes.error;
@@ -1174,7 +1177,6 @@
                                     value={dateFrom}
                                     onChange={(e) => {
                                         setDateFrom(e.target.value);
-                                        setCurrentPage(1);
                                     }}
                                 />
                             </div>
@@ -1185,7 +1187,6 @@
                                     value={dateTo}
                                     onChange={(e) => {
                                         setDateTo(e.target.value);
-                                        setCurrentPage(1);
                                     }}
                                 />
                             </div>
@@ -1196,7 +1197,6 @@
                                     onChange={(e) => {
                                         setSelectedCargo(e.target.value);
                                         setSelectedOperario('Todos');
-                                        setCurrentPage(1);
                                     }}
                                 >
                                     <option value="Todos">Todos</option>
@@ -1211,7 +1211,6 @@
                                     value={selectedOperario}
                                     onChange={(e) => {
                                         setSelectedOperario(e.target.value);
-                                        setCurrentPage(1);
                                     }}
                                 >
                                     <option value="Todos">Todos</option>
@@ -1227,7 +1226,6 @@
                                     onChange={(e) => {
                                         const newView = e.target.value;
                                         setPeriodView(newView);
-                                        setCurrentPage(1);
                                         if (newView === 'Diario') {
                                             const hoy = new Date().toISOString().split('T')[0];
                                             setDateFrom(hoy);
@@ -1258,7 +1256,6 @@
                                             checked={excludeWeekends}
                                             onChange={(e) => {
                                                 setExcludeWeekends(e.target.checked);
-                                                setCurrentPage(1);
                                             }}
                                             style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#192853' }}
                                         />
@@ -1266,7 +1263,6 @@
                                     </label>
                                 </div>
                             )}
-                            <button className="btn-apply">Aplicar Filtros</button>
                             <button
                                 onClick={handleRecalculate}
                                 disabled={recalculating}

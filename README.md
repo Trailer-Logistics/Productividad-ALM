@@ -22,6 +22,7 @@ Plataforma web que permite cargar datos del WMS, calcular automaticamente la pro
 - `3-historial_cajas` - Movimientos LPN de cajas desde WMS (solo registra al recepcionista)
 - `3-historial_destino` - Movimientos LPN destino desde WMS (solo registra al gruero)
 - `3-productividad_final` - Snapshot materializado de productividad diaria por operario
+- `3-detalle_diario_operario` - Detalle diario por operario (mov LPN cajas, LPN destino, OUT minutas, IN minutas)
 - `3-productividad_semanal` - Productividad semanal por operario
 - `3-config_horarios` - Horas de jornada y efectividad por dia de semana
 
@@ -42,6 +43,16 @@ Formula: `productividad_hora = total_movimientos / horas_efectivas`
 
 ### Resolucion de alias
 La minuta operacional es manual, por lo que los nombres pueden variar. La tabla `3-operarios_alias` resuelve variantes (ej: GVALENZUELA, GUSTAVO VALENZUELA, GUSTAVO) al usuario WMS correcto (GUVALENZUE).
+
+### Manejo de duplicados
+- `3-historial_cajas`: constraint UNIQUE en (id_lpn, ubicacion_prev, ubicacion, usuario, fecha_mod) - si se sube el mismo archivo dos veces, los duplicados se ignoran automaticamente
+- `3-historial_destino`: constraint UNIQUE en (id_lpn, ubic_anterior, ubic_actual, usuario, fecha_mod) - mismo comportamiento
+- `3-productividad_final`: UPSERT por (usuario, dia) - recalcular sobreescribe sin duplicar
+- `3-detalle_diario_operario`: UPSERT por (usuario, dia) - misma logica
+
+### Funciones principales
+- `fn_3_guardar_productividad(fecha_desde, fecha_hasta)` - Materializa la vista de productividad en la tabla snapshot
+- `fn_guardar_detalle_diario(fecha_desde, fecha_hasta)` - Pobla/actualiza la tabla de detalle diario por operario
 
 ---
 Desarrollado para Trailer Logistics | 2026
