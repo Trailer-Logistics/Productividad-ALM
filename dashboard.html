@@ -1000,22 +1000,31 @@
                 fetchData();
             }, []);
 
-            // Fetch flujo data (minuta IN/OUT) when date range is set
+            // Fetch flujo data (minuta IN/OUT) when date range is set — paginated
             useEffect(() => {
                 if (!dateFrom && !dateTo) return;
                 const fetchFlujo = async () => {
                     setFlujoLoading(true);
                     try {
-                        let query = supabase
-                            .from('1-minuta_operacional')
-                            .select('fecha, flujo')
-                            .order('fecha', { ascending: true })
-                            .limit(10000);
-                        if (dateFrom) query = query.gte('fecha', dateFrom);
-                        if (dateTo) query = query.lte('fecha', dateTo + 'T23:59:59');
-                        const { data, error } = await query;
-                        if (error) throw error;
-                        setFlujoData(data || []);
+                        const PAGE = 1000;
+                        let all = [];
+                        let from = 0;
+                        while (true) {
+                            let q = supabase
+                                .from('1-minuta_operacional')
+                                .select('fecha, flujo')
+                                .order('fecha', { ascending: true })
+                                .range(from, from + PAGE - 1);
+                            if (dateFrom) q = q.gte('fecha', dateFrom);
+                            if (dateTo) q = q.lte('fecha', dateTo + 'T23:59:59');
+                            const { data, error } = await q;
+                            if (error) throw error;
+                            if (!data || data.length === 0) break;
+                            all = all.concat(data);
+                            if (data.length < PAGE) break;
+                            from += PAGE;
+                        }
+                        setFlujoData(all);
                     } catch (err) {
                         console.error('Error fetching flujo:', err);
                     } finally {
