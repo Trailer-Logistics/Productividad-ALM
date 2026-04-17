@@ -1008,7 +1008,7 @@
                     try {
                         let query = supabase
                             .from('1-minuta_operacional')
-                            .select('fecha, flujo, pallets')
+                            .select('fecha, flujo')
                             .order('fecha', { ascending: true })
                             .limit(10000);
                         if (dateFrom) query = query.gte('fecha', dateFrom);
@@ -1032,10 +1032,9 @@
                     const fecha = row.fecha;
                     if (!fecha) return;
                     if (!grouped[fecha]) grouped[fecha] = { fecha, in: 0, out: 0 };
-                    const pallets = parseInt(row.pallets) || 0;
                     const f = (row.flujo || '').toUpperCase();
-                    if (f === 'IN') grouped[fecha].in += pallets;
-                    else if (f === 'OUT') grouped[fecha].out += pallets;
+                    if (f === 'IN') grouped[fecha].in += 1;
+                    else if (f === 'OUT') grouped[fecha].out += 1;
                 });
                 return Object.values(grouped).sort((a, b) => a.fecha.localeCompare(b.fecha));
             }, [flujoData]);
@@ -1384,7 +1383,7 @@
                             {/* Tabla de Flujos Diarios desde Minuta */}
                             {flujoTableData.length > 0 && (
                                 <div className="chart-card" style={{ marginBottom: '2rem' }}>
-                                    <h3 className="chart-title">Flujo Diario de Pallets (Minuta)</h3>
+                                    <h3 className="chart-title">Flujo Diario — Líneas de Minuta</h3>
                                     {flujoLoading ? (
                                         <div style={{ textAlign: 'center', padding: '1rem', color: '#5E6373' }}>Cargando flujos...</div>
                                     ) : (
@@ -1393,8 +1392,8 @@
                                                 <thead>
                                                     <tr>
                                                         <th>Día</th>
-                                                        <th style={{ color: '#10B981' }}>IN</th>
-                                                        <th style={{ color: '#EF4444' }}>OUT</th>
+                                                        <th style={{ color: '#10B981' }}>IN (líneas)</th>
+                                                        <th style={{ color: '#EF4444' }}>OUT (líneas)</th>
                                                         <th>Total</th>
                                                     </tr>
                                                 </thead>

@@ -61,8 +61,8 @@ Debajo del grafico de "Tendencia de Productividad General" aparece una tabla com
 | Columna | Descripcion |
 |---------|-------------|
 | **Dia** | Fecha formateada (ej: mie. 16/04/2026) |
-| **IN** | Total pallets recibidos (flujo IN) |
-| **OUT** | Total pallets despachados (flujo OUT) |
+| **IN (líneas)** | Cantidad de filas con flujo IN en la minuta |
+| **OUT (líneas)** | Cantidad de filas con flujo OUT en la minuta |
 | **Total** | Suma IN + OUT |
 
 ---
