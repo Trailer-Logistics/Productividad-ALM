@@ -899,6 +899,8 @@
             const [recalculating, setRecalculating] = useState(false);
             const [activeCargos, setActiveCargos] = useState(new Set());
             const [cargosInitialized, setCargosInitialized] = useState(false);
+            const [flujoData, setFlujoData] = useState([]);
+            const [flujoLoading, setFlujoLoading] = useState(false);
 
             // Recalcular productividad desde la vista (incluye minutas)
             const handleRecalculate = async () => {
@@ -997,6 +999,46 @@
 
                 fetchData();
             }, []);
+
+            // Fetch flujo data (minuta IN/OUT) when date range is set
+            useEffect(() => {
+                if (!dateFrom && !dateTo) return;
+                const fetchFlujo = async () => {
+                    setFlujoLoading(true);
+                    try {
+                        let query = supabase
+                            .from('1-minuta_operacional')
+                            .select('fecha, flujo, pallets')
+                            .order('fecha', { ascending: true })
+                            .limit(10000);
+                        if (dateFrom) query = query.gte('fecha', dateFrom);
+                        if (dateTo) query = query.lte('fecha', dateTo);
+                        const { data, error } = await query;
+                        if (error) throw error;
+                        setFlujoData(data || []);
+                    } catch (err) {
+                        console.error('Error fetching flujo:', err);
+                    } finally {
+                        setFlujoLoading(false);
+                    }
+                };
+                fetchFlujo();
+            }, [dateFrom, dateTo]);
+
+            // Aggregate flujo by day
+            const flujoTableData = useMemo(() => {
+                const grouped = {};
+                flujoData.forEach(row => {
+                    const fecha = row.fecha;
+                    if (!fecha) return;
+                    if (!grouped[fecha]) grouped[fecha] = { fecha, in: 0, out: 0 };
+                    const pallets = parseInt(row.pallets) || 0;
+                    const f = (row.flujo || '').toUpperCase();
+                    if (f === 'IN') grouped[fecha].in += pallets;
+                    else if (f === 'OUT') grouped[fecha].out += pallets;
+                });
+                return Object.values(grouped).sort((a, b) => a.fecha.localeCompare(b.fecha));
+            }, [flujoData]);
 
             // Determine active data source based on period view
             const isDaily = periodView === 'Diario';
@@ -1338,6 +1380,43 @@
                                     </ResponsiveContainer>
                                 </div>
                             </div>
+
+                            {/* Tabla de Flujos Diarios desde Minuta */}
+                            {flujoTableData.length > 0 && (
+                                <div className="chart-card" style={{ marginBottom: '2rem' }}>
+                                    <h3 className="chart-title">Flujo Diario de Pallets (Minuta)</h3>
+                                    {flujoLoading ? (
+                                        <div style={{ textAlign: 'center', padding: '1rem', color: '#5E6373' }}>Cargando flujos...</div>
+                                    ) : (
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table className="ranking-table" style={{ fontSize: '0.85rem' }}>
+                                                <thead>
+                                                    <tr>
+                                                        <th>Día</th>
+                                                        <th style={{ color: '#10B981' }}>IN</th>
+                                                        <th style={{ color: '#EF4444' }}>OUT</th>
+                                                        <th>Total</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {flujoTableData.map(row => {
+                                                        const d = new Date(row.fecha + 'T12:00:00');
+                                                        const label = d.toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+                                                        return (
+                                                            <tr key={row.fecha}>
+                                                                <td>{label}</td>
+                                                                <td><span style={{ color: '#10B981', fontWeight: 600 }}>{row.in}</span></td>
+                                                                <td><span style={{ color: '#EF4444', fontWeight: 600 }}>{row.out}</span></td>
+                                                                <td><span className="mono-value">{row.in + row.out}</span></td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Tendencia por Cargo - Full Width with toggle chips */}
                             {(() => {
