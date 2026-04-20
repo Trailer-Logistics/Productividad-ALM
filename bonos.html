@@ -170,7 +170,6 @@
         </div>
         <div class="periodo-box">Periodo:<strong id="periodoTxt">-</strong></div>
         <button class="btn-apply" id="btnConsultar">Consultar</button>
-        <button class="btn-export" id="btnExportar" disabled>Exportar operarios</button>
         <button class="btn-apply" id="btnConsolidado" style="background:var(--success)">📥 Descargar consolidado</button>
     </div>
 
@@ -274,7 +273,6 @@
             <span style="font-size:10px;color:var(--slate);margin-top:4px">100%→$20.000 · 95-99%→$15.000 · 90-94%→$10.000 · &lt;90%→$0</span>
         </div>
         <button class="btn-add-admin" id="btnAddAdmin">+ Agregar administrativo</button>
-        <button class="btn-export" id="btnExportarAdmin" disabled>Exportar Excel</button>
     </div>
 
     <div class="kpi-grid">
@@ -471,7 +469,6 @@ function render({ list, total, dias }) {
     const tbody = $('tbody');
     if (!list.length) {
         tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Sin movimientos en el rango seleccionado.</td></tr>';
-        $('btnExportar').disabled = true;
         actualizarDivisionPozo();
         return;
     }
@@ -496,7 +493,6 @@ function render({ list, total, dias }) {
             <td class="num"><strong>${fmtMoney(bono)}</strong></td>
         </tr>`;
     }).join('');
-    $('btnExportar').disabled = false;
 }
 
 // Estado de la division del pozo
@@ -554,32 +550,6 @@ async function consultar() {
     } finally {
         $('btnConsultar').disabled = false;
     }
-}
-
-function exportar() {
-    if (!lastResult || !lastResult.list.length) return;
-    const mesIdx = parseInt($('mesBono').value, 10) - 1;
-    const anio = $('anioBono').value;
-    const nombreMes = MESES[mesIdx];
-    const pozoOper = currentPozoOperarios;
-    const data = lastResult.list.map((r, i) => {
-        const p = lastResult.total > 0 ? (r.movimientos / lastResult.total) : 0;
-        const op = operariosMap.get((r.usuario || '').toUpperCase()) || {};
-        return {
-            '#': i + 1,
-            'Nombre': r.nombre,
-            'RUT': op.rut || '',
-            'Usuario WMS': r.usuario,
-            'Cargo': r.cargo,
-            'Movimientos': r.movimientos,
-            '% del total': p,
-            'Bono $': Math.round(pozoOper * p)
-        };
-    });
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(data);
-    XLSX.utils.book_append_sheet(wb, ws, `Bono ${nombreMes} ${anio}`);
-    XLSX.writeFile(wb, `Bonos_ALM_${nombreMes}_${anio}.xlsx`);
 }
 
 function poblarSelectores() {
@@ -778,7 +748,6 @@ function renderAdmins() {
         $('kpiAdminCount').textContent = '0';
         $('kpiAdminPct').textContent = '0%';
         $('kpiAdminBono').textContent = '$0';
-        $('btnExportarAdmin').disabled = true;
         return;
     }
     const pozo = parseFloat($('pozoAdmin').value) || 0;
@@ -819,7 +788,6 @@ function renderAdmins() {
     $('kpiAdminPct').textContent = (sumaPct * 100).toFixed(2) + '%';
     $('kpiAdminBono').textContent = fmtMoney(sumaTotal);
     $('adminCount').textContent = `${admins.length} administrativos`;
-    $('btnExportarAdmin').disabled = false;
 
     // Bind inline edits
     tbody.querySelectorAll('input.inline-edit').forEach(inp => {
@@ -981,36 +949,6 @@ function exportarConsolidado() {
     XLSX.writeFile(wb, `Bonos_Consolidado_${mesNombre}_${anio}.xlsx`);
 }
 
-function exportarAdmin() {
-    if (!admins.length) return;
-    const anio = $('anioBono').value;
-    const mesNombre = MESES[parseInt($('mesBono').value, 10) - 1];
-    const pozo = parseFloat($('pozoAdmin').value) || 0;
-    const regalo = parseFloat($('regaloAdmin').value) || 0;
-    const rows = admins.map(admin => {
-        const bonoRow = bonoMensualMap.get(admin.id);
-        const c = calcularAdmin(admin, bonoRow, pozo, regalo);
-        return {
-            'RUT': admin.rut || '',
-            'Nombre': admin.nombre,
-            'Unidad Negocio': admin.unidad_negocio || '',
-            'Centro de Costo': admin.centro_costo || '',
-            'Cargo': admin.cargo || '',
-            '% Participacion': c.pct,
-            '% Cumplimiento': c.cumpl,
-            'Dinero x persona': Math.round(c.dineroPersona),
-            'Descuento': Math.round(c.desc),
-            'Bono real': Math.round(c.bonoReal),
-            'Regalo': Math.round(c.regalo),
-            'Bono + Regalo': Math.round(c.total)
-        };
-    });
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, `ADM ${mesNombre} ${anio}`);
-    XLSX.writeFile(wb, `Bonos_ADM_${mesNombre}_${anio}.xlsx`);
-}
-
 // Init
 (function init() {
     poblarSelectores();
@@ -1024,7 +962,6 @@ function exportarAdmin() {
     $('mesBono').addEventListener('change', onMesChange);
     $('anioBono').addEventListener('change', onMesChange);
     $('btnConsultar').addEventListener('click', consultar);
-    $('btnExportar').addEventListener('click', exportar);
     $('btnConsolidado').addEventListener('click', exportarConsolidado);
     $('palletsFacturados').addEventListener('input', () => {
         onPalletsChange();
@@ -1036,7 +973,6 @@ function exportarAdmin() {
     $('btnAddAdmin').addEventListener('click', openAdminModal);
     $('btnCancelAdmin').addEventListener('click', closeAdminModal);
     $('btnSaveAdmin').addEventListener('click', saveNewAdmin);
-    $('btnExportarAdmin').addEventListener('click', exportarAdmin);
     $('pozoAdmin').addEventListener('input', renderAdmins);
     $('regaloAdmin').addEventListener('input', renderAdmins);
     $('adminModal').addEventListener('click', (e) => { if (e.target.id === 'adminModal') closeAdminModal(); });
