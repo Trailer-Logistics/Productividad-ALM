@@ -28,7 +28,7 @@
         .nav-links a:hover { background: rgba(255,255,255,0.2); }
         .nav-links a.active { background: rgba(255,255,255,0.25); font-weight: 600; }
 
-        .main { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+        .main { max-width: 1400px; margin: 0 auto; padding: 32px 24px; }
         .page-title { font-size: 28px; font-weight: 700; color: #000; margin-bottom: 4px; }
         .page-subtitle { color: var(--slate); font-size: 14px; margin-bottom: 24px; }
 
@@ -62,19 +62,19 @@
         .kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--slate); margin-bottom: 6px; }
         .kpi-value { font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 700; color: var(--navy); }
 
-        .table-wrap { background: var(--white); border-radius: 12px; overflow: hidden; }
+        .table-wrap { background: var(--white); border-radius: 12px; overflow-x: auto; }
         .table-header { padding: 16px 24px; border-bottom: 1px solid var(--ice-grey); display: flex; align-items: center; justify-content: space-between; }
         .table-title { font-size: 14px; font-weight: 700; color: var(--navy); }
         .table-count { font-size: 12px; color: var(--slate); font-family: 'JetBrains Mono', monospace; }
 
         table { width: 100%; border-collapse: collapse; }
         thead th {
-            text-align: left; padding: 12px 24px; font-size: 11px; text-transform: uppercase;
+            text-align: left; padding: 12px 14px; font-size: 11px; text-transform: uppercase;
             letter-spacing: 0.05em; color: var(--slate); font-weight: 600; background: var(--ice-grey);
-            border-bottom: 1px solid rgba(0,0,0,0.05);
+            border-bottom: 1px solid rgba(0,0,0,0.05); white-space: nowrap;
         }
         thead th.num { text-align: right; }
-        tbody td { padding: 12px 24px; font-size: 13px; border-bottom: 1px solid var(--ice-grey); }
+        tbody td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--ice-grey); }
         tbody td.num { text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
         tbody tr:hover { background: rgba(25,40,83,0.03); }
         .pos { display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; background: var(--ice-grey); color: var(--slate); font-size: 11px; font-weight: 700; }
