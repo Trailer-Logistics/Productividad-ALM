@@ -279,7 +279,7 @@
 
     <div class="kpi-grid">
         <div class="kpi-card" style="border-left-color:var(--success)">
-            <div class="kpi-label">Administrativos activos</div>
+            <div class="kpi-label">Administrativos</div>
             <div class="kpi-value" id="kpiAdminCount">-</div>
         </div>
         <div class="kpi-card" style="border-left-color:var(--success)">
@@ -708,7 +708,8 @@ let admins = []; // catalogo base
 let bonoMensualMap = new Map(); // admin_id → registro mensual actual
 
 async function fetchAdmins() {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/3-administrativos?activo=eq.true&order=nombre.asc`, { headers: ADMIN_HEADERS });
+    // Traer TODOS los admins del listado (el conteo para el pozo usa esto).
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/3-administrativos?order=nombre.asc`, { headers: ADMIN_HEADERS });
     if (!r.ok) throw new Error('Error al cargar administrativos');
     return await r.json();
 }
