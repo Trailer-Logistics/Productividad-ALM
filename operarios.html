@@ -792,7 +792,24 @@
 
                 <h3>🔍 Dato técnico</h3>
                 <p class="help-note">
-                    Los movimientos del WMS siempre se guardan cuando cargás data, sin importar el estado del operario. Lo que controla el estado es <strong>quién aparece en los reportes</strong>, no qué se guarda. Los datos no se pierden.
+                    Los movimientos del WMS siempre se guardan cuando cargás data, sin importar el estado del operario. Lo que controla el estado es <strong>quién aparece en los reportes</strong>, no qué se guarda.
+                </p>
+
+                <h3>⏳ ¿Qué pasa con el historial si elimino y re-agrego después?</h3>
+                <p style="margin-bottom: 10px;">
+                    Ejemplo: elimino a alguien hoy, pasan 10 meses y lo vuelvo a agregar con el mismo usuario WMS. Qué se recupera:
+                </p>
+                <table class="help-table">
+                    <thead><tr><th>Período</th><th>¿Se recupera?</th></tr></thead>
+                    <tbody>
+                        <tr><td>Antes de eliminarlo (cuando estaba activo)</td><td>✅ Sí, intacto. La productividad diaria queda guardada y se re-enlaza por código WMS.</td></tr>
+                        <tr><td>Mes 1 a 8 del período ausente</td><td>❌ Perdido. El sistema purga los movimientos crudos &gt;2 meses en cada carga.</td></tr>
+                        <tr><td>Últimos 2 meses antes de re-agregarlo</td><td>⚠️ Recuperable solo si corrés <em>fn_3_guardar_productividad</em> tras incorporarlo.</td></tr>
+                        <tr><td>Desde que lo incorporás en adelante</td><td>✅ Normal.</td></tr>
+                    </tbody>
+                </table>
+                <p class="help-note" style="margin-top: 12px;">
+                    <strong>Mejor práctica:</strong> si hay chance de que vuelva (licencia, temporada, etc.) no elimines — marcalo <strong>Inactivo</strong>. Mantenés nombre, RUT, cargo y factor intactos, y al reactivarlo se recupera lo que esté dentro del historial crudo de 2 meses. <strong>Eliminar</strong> es solo para errores y duplicados.
                 </p>
             </div>
         </details>
