@@ -8,15 +8,21 @@
 -- ============================================================
 CREATE TABLE IF NOT EXISTS "3-operarios" (
     id              SERIAL PRIMARY KEY,
-    rut             TEXT UNIQUE NOT NULL,
-    usuario         TEXT UNIQUE NOT NULL,       -- username del WMS (JESPINOZA, PLOPEZ, etc.)
-    nombre          TEXT NOT NULL,              -- nombre completo
-    cargo           TEXT NOT NULL,              -- OPERADOR GRUA, OPERADOR APILADOR, etc.
-    tipo_equipo     TEXT,                       -- SIMPLE, DOBLE
-    factor_ajustado NUMERIC(3,2) DEFAULT 1.00, -- factor 0.70 a 1.00
-    activo          BOOLEAN DEFAULT TRUE,
+    rut             TEXT UNIQUE,                     -- opcional: pendientes detectados no tienen RUT hasta ser incorporados
+    usuario         TEXT UNIQUE NOT NULL,            -- username del WMS (JESPINOZA, PLOPEZ, etc.)
+    nombre          TEXT,                            -- opcional al crearse como pendiente; requerido al incorporar
+    cargo           TEXT,                            -- opcional al crearse como pendiente; requerido al incorporar
+    tipo_equipo     TEXT,                            -- SIMPLE, DOBLE
+    factor_ajustado NUMERIC(3,2) DEFAULT 1.00,       -- factor 0.70 a 1.00
+    activo          BOOLEAN DEFAULT TRUE,            -- espejo historico; la fuente de verdad es "estado"
+    estado          TEXT NOT NULL DEFAULT 'activo'
+                    CHECK (estado IN ('pendiente','activo','inactivo')),
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Indices para detección idempotente y filtro por estado
+CREATE UNIQUE INDEX IF NOT EXISTS uq_operarios_usuario_upper ON "3-operarios" (UPPER(usuario));
+CREATE INDEX IF NOT EXISTS idx_operarios_estado ON "3-operarios" (estado);
 
 
 -- 1b. TABLA DE ALIAS DE OPERARIOS
@@ -257,7 +263,7 @@ LEFT JOIN mov_destino md ON md.usuario = UPPER(td.usuario) AND md.dia = td.dia
 LEFT JOIN min_out mo ON mo.usuario = UPPER(td.usuario) AND mo.dia = td.dia
 LEFT JOIN min_in mi ON mi.usuario = UPPER(td.usuario) AND mi.dia = td.dia
 LEFT JOIN "3-config_horarios" ch ON ch.dia_semana = EXTRACT(ISODOW FROM td.dia)::INT
-WHERE o.id IS NOT NULL;
+WHERE o.id IS NOT NULL AND o.estado = 'activo';  -- pendientes e inactivos excluidos de reportes
 
 
 -- 6. TABLA SNAPSHOT: Productividad final materializada
@@ -340,5 +346,48 @@ BEGIN
         fecha_calculo = NOW();
     GET DIAGNOSTICS filas = ROW_COUNT;
     RETURN filas;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- 7. FUNCION: DETECTAR OPERARIOS NUEVOS (PENDIENTES)
+-- ============================================================
+-- Busca usuarios WMS presentes en historial_cajas/destino que NO esten
+-- en "3-operarios" y los inserta con estado='pendiente'. Idempotente.
+-- Se invoca desde index.html tras cada carga. El usuario decide en la
+-- pagina Operarios si los incorpora (→ estado='activo', con cargo) o
+-- los rechaza (→ estado='inactivo').
+CREATE OR REPLACE FUNCTION public.fn_3_detectar_operarios_pendientes()
+RETURNS TABLE(usuario_detectado TEXT, origen TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    WITH usuarios_wms AS (
+        SELECT DISTINCT UPPER(usuario) AS usuario, 'historial_cajas' AS origen
+        FROM "3-historial_cajas"
+        WHERE usuario IS NOT NULL AND usuario <> ''
+        UNION
+        SELECT DISTINCT UPPER(usuario), 'historial_destino'
+        FROM "3-historial_destino"
+        WHERE usuario IS NOT NULL AND usuario <> ''
+    ),
+    nuevos AS (
+        SELECT uw.usuario, MIN(uw.origen) AS origen
+        FROM usuarios_wms uw
+        WHERE NOT EXISTS (
+            SELECT 1 FROM "3-operarios" o
+            WHERE UPPER(o.usuario) = uw.usuario
+        )
+        GROUP BY uw.usuario
+    ),
+    inserts AS (
+        INSERT INTO "3-operarios" (usuario, nombre, estado, factor_ajustado)
+        SELECT n.usuario, n.usuario, 'pendiente', 1.00
+        FROM nuevos n
+        ON CONFLICT DO NOTHING
+        RETURNING usuario
+    )
+    SELECT n.usuario, n.origen
+    FROM nuevos n
+    JOIN inserts i ON UPPER(i.usuario) = n.usuario;
 END;
 $$ LANGUAGE plpgsql;

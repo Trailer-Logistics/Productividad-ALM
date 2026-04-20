@@ -657,6 +657,7 @@ async function startUpload() {
     });
     addProgressItem('calc', 'Calcular productividad diaria', 'Pendiente...');
     addProgressItem('weekly', 'Actualizar resumen semanal', 'Pendiente...');
+    addProgressItem('detect', 'Detectar operarios nuevos', 'Pendiente...');
     addProgressItem('clean', 'Limpieza de data antigua (>2 meses)', 'Pendiente...');
 
     let totalInserted = 0, totalErrors = 0;
@@ -777,6 +778,28 @@ async function startUpload() {
         setProgressState('weekly', 'done', 'Sin datos nuevos para resumir', 100);
     }
 
+    // ── PASO 2.75: Detectar operarios nuevos (pendientes) ─────
+    let pendientesCount = 0;
+    if (totalInserted > 0) {
+        setProgressState('detect', 'running', 'Buscando usuarios WMS no registrados...', 50);
+        try {
+            const detResult = await callRPC('fn_3_detectar_operarios_pendientes');
+            pendientesCount = Array.isArray(detResult) ? detResult.length : 0;
+            if (pendientesCount > 0) {
+                setProgressState('detect', 'done',
+                    pendientesCount + ' operarios nuevos detectados como PENDIENTES (revisar en Operarios)', 100);
+                log('success', pendientesCount + ' operarios nuevos registrados como pendientes — revisar en la pagina Operarios');
+            } else {
+                setProgressState('detect', 'done', 'Sin operarios nuevos', 100);
+            }
+        } catch (err) {
+            setProgressState('detect', 'error', 'Error: ' + err.message, 100);
+            log('error', 'Error detectando operarios nuevos: ' + err.message);
+        }
+    } else {
+        setProgressState('detect', 'done', 'Sin datos nuevos', 100);
+    }
+
     // ── PASO 3: Limpieza de data antigua ──────────────────────
     setProgressState('clean', 'running', 'Eliminando historial crudo mayor a 2 meses...', 50);
     log('info', 'Ejecutando limpieza de data cruda mayor a 2 meses...');
@@ -808,6 +831,7 @@ async function startUpload() {
         (totalErrors > 0 ? '<div class="summary-stat"><div class="summary-stat-value" style="color:var(--error)">' + totalErrors.toLocaleString('es-CL') + '</div><div class="summary-stat-label">filas con error</div></div>' : '') +
         (prodCount > 0 ? '<div class="summary-stat"><div class="summary-stat-value" style="color:var(--success)">' + prodCount + '</div><div class="summary-stat-label">productividades diarias</div></div>' : '') +
         (weeklyCount > 0 ? '<div class="summary-stat"><div class="summary-stat-value" style="color:var(--success)">' + weeklyCount + '</div><div class="summary-stat-label">resumen semanal</div></div>' : '') +
+        (pendientesCount > 0 ? '<div class="summary-stat"><div class="summary-stat-value" style="color:var(--warning)">' + pendientesCount + '</div><div class="summary-stat-label">operarios pendientes</div></div>' : '') +
         Object.entries(results).map(function(entry) {
             return '<div class="summary-stat"><div class="summary-stat-value">' + entry[1].inserted.toLocaleString('es-CL') + '</div><div class="summary-stat-label">' + LABEL_MAP[entry[0]] + '</div></div>';
         }).join('');

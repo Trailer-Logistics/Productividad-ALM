@@ -20,7 +20,7 @@ Plataforma web que permite cargar datos del WMS, calcular automaticamente la pro
 **Proyecto Supabase:** `WMS_Almacenaje` (ref `xcmpuyjoidexrgpnotkj`, org Trailer Logistics)
 
 ### Tablas principales
-- `3-operarios` - Maestro de operarios con usuario WMS, cargo, factor ajustado
+- `3-operarios` - Maestro de operarios con usuario WMS, cargo, factor ajustado, y **estado** (`pendiente`/`activo`/`inactivo`). Solo los `activo` participan en reportes.
 - `3-operarios_alias` - Mapeo de nombres manuales de minuta a usuario WMS (ej: GVALENZUELA -> GUVALENZUE)
 - `3-historial_cajas` - Movimientos LPN de cajas desde WMS (solo registra al recepcionista)
 - `3-historial_destino` - Movimientos LPN destino desde WMS (solo registra al gruero)
@@ -74,18 +74,32 @@ La minuta operacional es manual, por lo que los nombres pueden variar. La tabla 
 Invocadas desde el codigo:
 - `fn_3_guardar_productividad(fecha_desde, fecha_hasta)` - Materializa `3-v_productividad_diaria` en `3-productividad_final`. Usada desde `index.html` tras cada carga y desde `dashboard.html` al recalcular.
 - `fn_3_actualizar_productividad_semanal(fecha_desde, fecha_hasta)` - Recalcula `3-productividad_semanal` a partir del diario. Usada desde `index.html` y `dashboard.html`.
+- `fn_3_detectar_operarios_pendientes()` - Auto-detecta usuarios WMS presentes en historial_cajas/destino que no estan en `3-operarios` y los inserta con estado `pendiente`. Invocada desde `index.html` tras cada carga.
 - `fn_3_limpiar_historial_antiguo()` - Purga registros antiguos de `3-historial_cajas` / `3-historial_destino`. Usada desde `index.html` al final de cada carga.
 - `fn_guardar_detalle_diario(fecha_desde, fecha_hasta)` - Pobla/actualiza `3-detalle_diario_operario`.
 
 Otras funciones presentes en la base (no invocadas directamente desde el frontend, probablemente auxiliares o de trigger):
 - `fn_3_cajas_calcular`, `fn_3_destino_calcular`, `fn_3_config_horas_efectivas`, `fn_3_calcular_bono`, `fn_trigger_recalc_minuta`
 
+### Flujo de estados de operarios (pendiente → activo / inactivo)
+
+Desde que se carga el WMS, los usuarios nuevos aparecen automaticamente en la pagina Operarios como **pendientes**:
+
+1. `index.html` carga CSVs a `3-historial_cajas` / `3-historial_destino`.
+2. Al final de la carga llama a `fn_3_detectar_operarios_pendientes()` que inserta cualquier usuario nuevo en `3-operarios` con `estado='pendiente'` (sin cargo, sin RUT, sin nombre real).
+3. En `operarios.html` aparece un alerta amarillo "⚠ N operario(s) pendiente(s)" con el listado. Cada pendiente muestra botones **Incorporar** y **Rechazar**.
+4. Al **Incorporar**, se abre un modal con los movimientos recientes del usuario (últimos 30 días en LPN cajas/destino) como hint para decidir el cargo. El usuario selecciona cargo, tipo de equipo, factor, y el operario pasa a `activo`.
+5. Al **Rechazar**, pasa directo a `inactivo`.
+6. Solo los `activo` aparecen en la vista `3-v_productividad_diaria` y por ende en productividad, dashboard y bonos.
+
 ### Gaps entre `schema.sql` y la base real
 Tablas y funciones existentes en Supabase pero **no versionadas** en el repo:
 - Tablas: `3-log_cargas`, `3-productividad_semanal`
 - Funciones: `fn_3_actualizar_productividad_semanal`, `fn_3_limpiar_historial_antiguo`, `fn_3_cajas_calcular`, `fn_3_destino_calcular`, `fn_3_config_horas_efectivas`, `fn_3_calcular_bono`, `fn_trigger_recalc_minuta`
 
-Riesgo: si se clona el repo y se corre `schema.sql` en limpio, la app no funciona completa. Pendiente dumpear estos objetos al repo.
+Versionadas en este repo: tabla `3-operarios` con estado/indices, vista `3-v_productividad_diaria` con filtro de estado, funcion `fn_3_detectar_operarios_pendientes`.
+
+Riesgo: si se clona el repo y se corre `schema.sql` en limpio, la app no funciona completa. Pendiente dumpear el resto de objetos al repo.
 
 ## Dashboard - Flujo Diario en Gráfico
 

@@ -342,6 +342,69 @@
             background: #FECACA;
         }
 
+        .status-pending {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+
+        .status-pending:hover {
+            background: #FDE68A;
+        }
+
+        .pending-alert {
+            background: #FEF3C7;
+            border: 1px solid #FCD34D;
+            color: #92400E;
+            padding: 12px 18px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            font-weight: 500;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pending-alert.visible { display: flex; }
+        .pending-alert strong { font-family: 'JetBrains Mono', monospace; }
+
+        .btn-approve {
+            padding: 6px 12px;
+            background: #10B981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: 'Montserrat', sans-serif;
+        }
+        .btn-approve:hover { background: #059669; }
+        .btn-reject {
+            padding: 6px 12px;
+            background: #FEE2E2;
+            color: #7F1D1D;
+            border: 1px solid #FECACA;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: 'Montserrat', sans-serif;
+        }
+        .btn-reject:hover { background: #FECACA; }
+
+        .hint-box {
+            background: #F0F9FF;
+            border: 1px solid #BAE6FD;
+            color: #075985;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+        .hint-box strong { font-weight: 700; }
+
         .status-dot-small {
             width: 8px;
             height: 8px;
@@ -653,6 +716,11 @@
             <h1>Gestión de Operarios</h1>
         </div>
 
+        <!-- Alerta pendientes -->
+        <div class="pending-alert" id="pendingAlert">
+            ⚠ Hay <strong id="pendingCount">0</strong> operario(s) pendiente(s) de aprobación detectado(s) desde el WMS. Revísalos abajo y decide si los incorporas.
+        </div>
+
         <!-- Controls -->
         <div class="controls">
             <input
@@ -663,6 +731,12 @@
             >
             <select class="filter-select" id="cargoFilter">
                 <option value="">Todos los cargos</option>
+            </select>
+            <select class="filter-select" id="estadoFilter">
+                <option value="">Todos los estados</option>
+                <option value="pendiente">Pendientes</option>
+                <option value="activo">Activos</option>
+                <option value="inactivo">Inactivos</option>
             </select>
             <button class="btn btn-primary" id="addOperarioBtn">
                 ➕ Agregar Operario
@@ -682,6 +756,7 @@
                 <h2 id="modalTitle">Agregar Operario</h2>
                 <button class="modal-close" id="modalClose">&times;</button>
             </div>
+            <div class="hint-box" id="approveHint" style="display:none;"></div>
             <form id="operarioForm">
                 <div class="form-group">
                     <label for="rutInput">RUT</label>
@@ -689,7 +764,6 @@
                         type="text"
                         id="rutInput"
                         placeholder="ej: 14.444.633-K"
-                        required
                     >
                     <div class="form-error" id="rutError"></div>
                 </div>
@@ -791,6 +865,7 @@
         const tableContent = document.getElementById('tableContent');
         const searchInput = document.getElementById('searchInput');
         const cargoFilter = document.getElementById('cargoFilter');
+        const estadoFilter = document.getElementById('estadoFilter');
         const addOperarioBtn = document.getElementById('addOperarioBtn');
         const operarioModal = document.getElementById('operarioModal');
         const operarioForm = document.getElementById('operarioForm');
@@ -818,6 +893,7 @@
             operarioForm.addEventListener('submit', handleFormSubmit);
             searchInput.addEventListener('input', filterTable);
             cargoFilter.addEventListener('change', filterTable);
+            estadoFilter.addEventListener('change', filterTable);
             confirmClose.addEventListener('click', closeConfirmModal);
             confirmCancel.addEventListener('click', closeConfirmModal);
             confirmOk.addEventListener('click', handleConfirmAction);
@@ -845,6 +921,7 @@
                 allOperarios = await response.json();
                 operarios = [...allOperarios];
                 setConnectionStatus(true);
+                refreshPendingAlert();
                 renderTable();
             } catch (error) {
                 console.error('Error:', error);
@@ -872,7 +949,7 @@
                 { key: 'cargo', label: 'Cargo', sortable: true },
                 { key: 'tipo_equipo', label: 'Tipo Equipo', sortable: true },
                 { key: 'factor_ajustado', label: 'Factor', sortable: true },
-                { key: 'activo', label: 'Activo', sortable: false },
+                { key: 'estado', label: 'Estado', sortable: true },
                 { key: 'actions', label: 'Acciones', sortable: false }
             ];
 
@@ -896,27 +973,36 @@
             operarios.forEach(operario => {
                 const row = document.createElement('tr');
 
+                const estado = operario.estado || 'activo';
+                const badgeClass = estado === 'pendiente' ? 'status-pending'
+                                 : estado === 'activo' ? 'status-active' : 'status-inactive';
+                const estadoLabel = estado.charAt(0).toUpperCase() + estado.slice(1);
+
+                const actionsHtml = estado === 'pendiente'
+                    ? `<div class="actions">
+                        <button class="btn-approve" onclick="openApproveModal(${operario.id})" title="Incorporar">✓ Incorporar</button>
+                        <button class="btn-reject" onclick="rejectOperario(${operario.id})" title="Rechazar">✗ Rechazar</button>
+                       </div>`
+                    : `<div class="actions">
+                        <button class="action-btn" onclick="openEditModal(${operario.id})" title="Editar">✏️</button>
+                        <button class="action-btn delete" onclick="openDeleteConfirm(${operario.id})" title="Eliminar">🗑️</button>
+                       </div>`;
+
+                const badgeHtml = estado === 'pendiente'
+                    ? `<span class="status-badge ${badgeClass}"><span class="status-dot-small"></span>${estadoLabel}</span>`
+                    : `<span class="status-badge ${badgeClass}" data-id="${operario.id}" onclick="toggleActivo(${operario.id}, event)">
+                         <span class="status-dot-small"></span>${estadoLabel}
+                       </span>`;
+
                 row.innerHTML = `
-                    <td>${escapeHtml(operario.rut)}</td>
-                    <td>${escapeHtml(operario.usuario)}</td>
-                    <td>${escapeHtml(operario.nombre)}</td>
-                    <td>${escapeHtml(operario.cargo)}</td>
-                    <td>${escapeHtml(operario.tipo_equipo)}</td>
+                    <td>${escapeHtml(operario.rut || '-')}</td>
+                    <td>${escapeHtml(operario.usuario || '-')}</td>
+                    <td>${escapeHtml(operario.nombre || '-')}</td>
+                    <td>${escapeHtml(operario.cargo || '-')}</td>
+                    <td>${escapeHtml(operario.tipo_equipo || '-')}</td>
                     <td>${formatNumber(operario.factor_ajustado)}</td>
-                    <td>
-                        <span class="status-badge ${operario.activo ? 'status-active' : 'status-inactive'}"
-                              data-id="${operario.id}"
-                              onclick="toggleActivo(${operario.id}, event)">
-                            <span class="status-dot-small"></span>
-                            ${operario.activo ? 'Activo' : 'Inactivo'}
-                        </span>
-                    </td>
-                    <td>
-                        <div class="actions">
-                            <button class="action-btn" onclick="openEditModal(${operario.id})" title="Editar">✏️</button>
-                            <button class="action-btn delete" onclick="openDeleteConfirm(${operario.id})" title="Eliminar">🗑️</button>
-                        </div>
-                    </td>
+                    <td>${badgeHtml}</td>
+                    <td>${actionsHtml}</td>
                 `;
                 tbody.appendChild(row);
             });
@@ -980,24 +1066,40 @@
         function filterTable() {
             const searchTerm = searchInput.value.toLowerCase();
             const selectedCargo = cargoFilter.value;
+            const selectedEstado = estadoFilter.value;
 
             operarios = allOperarios.filter(o => {
+                const nombre = (o.nombre || '').toLowerCase();
+                const usuario = (o.usuario || '').toLowerCase();
+                const rut = (o.rut || '').toLowerCase();
                 const matchSearch = !searchTerm ||
-                    o.nombre.toLowerCase().includes(searchTerm) ||
-                    o.usuario.toLowerCase().includes(searchTerm) ||
-                    o.rut.toLowerCase().includes(searchTerm);
+                    nombre.includes(searchTerm) ||
+                    usuario.includes(searchTerm) ||
+                    rut.includes(searchTerm);
 
                 const matchCargo = !selectedCargo || o.cargo === selectedCargo;
+                const matchEstado = !selectedEstado || o.estado === selectedEstado;
 
-                return matchSearch && matchCargo;
+                return matchSearch && matchCargo && matchEstado;
             });
 
             renderTable();
         }
 
+        function refreshPendingAlert() {
+            const pendientes = allOperarios.filter(o => o.estado === 'pendiente').length;
+            const alertEl = document.getElementById('pendingAlert');
+            document.getElementById('pendingCount').textContent = pendientes;
+            alertEl.classList.toggle('visible', pendientes > 0);
+        }
+
+        let isApprovingPendiente = false;
+
         function openAddModal() {
             currentOperarioId = null;
+            isApprovingPendiente = false;
             modalTitle.textContent = 'Agregar Operario';
+            document.getElementById('approveHint').style.display = 'none';
             operarioForm.reset();
             document.getElementById('factorInput').value = '1.0';
             clearFormErrors();
@@ -1009,13 +1111,15 @@
             if (!operario) return;
 
             currentOperarioId = id;
+            isApprovingPendiente = false;
             modalTitle.textContent = 'Editar Operario';
+            document.getElementById('approveHint').style.display = 'none';
 
-            document.getElementById('rutInput').value = operario.rut;
-            document.getElementById('usuarioInput').value = operario.usuario;
-            document.getElementById('nombreInput').value = operario.nombre;
-            document.getElementById('cargoInput').value = operario.cargo;
-            document.getElementById('tipoEquipoInput').value = operario.tipo_equipo;
+            document.getElementById('rutInput').value = operario.rut || '';
+            document.getElementById('usuarioInput').value = operario.usuario || '';
+            document.getElementById('nombreInput').value = operario.nombre || '';
+            document.getElementById('cargoInput').value = operario.cargo || '';
+            document.getElementById('tipoEquipoInput').value = operario.tipo_equipo || '';
             document.getElementById('factorInput').value = operario.factor_ajustado;
 
             clearFormErrors();
@@ -1025,6 +1129,8 @@
         function closeModal() {
             operarioModal.classList.remove('active');
             currentOperarioId = null;
+            isApprovingPendiente = false;
+            document.getElementById('approveHint').style.display = 'none';
         }
 
         function closeConfirmModal() {
@@ -1037,13 +1143,18 @@
             if (!validateForm()) return;
 
             const data = {
-                rut: document.getElementById('rutInput').value.trim(),
+                rut: document.getElementById('rutInput').value.trim() || null,
                 usuario: document.getElementById('usuarioInput').value.trim().toUpperCase(),
                 nombre: document.getElementById('nombreInput').value.trim().toUpperCase(),
                 cargo: document.getElementById('cargoInput').value,
                 tipo_equipo: document.getElementById('tipoEquipoInput').value,
                 factor_ajustado: parseFloat(document.getElementById('factorInput').value)
             };
+
+            if (isApprovingPendiente) {
+                data.estado = 'activo';
+                data.activo = true;
+            }
 
             try {
                 let response;
@@ -1085,7 +1196,8 @@
                 }
 
                 showToast(
-                    currentOperarioId ? 'Operario actualizado exitosamente' : 'Operario creado exitosamente',
+                    isApprovingPendiente ? 'Operario incorporado exitosamente'
+                    : currentOperarioId ? 'Operario actualizado exitosamente' : 'Operario creado exitosamente',
                     'success'
                 );
                 closeModal();
@@ -1101,10 +1213,7 @@
             let isValid = true;
 
             const rut = document.getElementById('rutInput').value.trim();
-            if (!rut) {
-                showFormError('rutError', 'RUT es requerido');
-                isValid = false;
-            } else if (!validateRUT(rut)) {
+            if (rut && !validateRUT(rut)) {
                 showFormError('rutError', 'RUT inválido (formato: XX.XXX.XXX-X)');
                 isValid = false;
             }
@@ -1162,11 +1271,7 @@
             });
         }
 
-        async function toggleActivo(id, event) {
-            event.preventDefault();
-            const operario = allOperarios.find(o => o.id === id);
-            if (!operario) return;
-
+        async function updateEstado(id, nuevoEstado) {
             try {
                 const response = await fetch(
                     `${SUPABASE_URL}/rest/v1/${TABLE_NAME}?id=eq.${id}`,
@@ -1178,20 +1283,83 @@
                             'Content-Type': 'application/json',
                             'Prefer': 'return=representation'
                         },
-                        body: JSON.stringify({ activo: !operario.activo })
+                        body: JSON.stringify({ estado: nuevoEstado, activo: nuevoEstado === 'activo' })
                     }
                 );
-
-                if (!response.ok) {
-                    throw new Error('Error al actualizar estado');
-                }
-
+                if (!response.ok) throw new Error('Error al actualizar estado');
                 await loadOperarios();
-                showToast('Estado actualizado', 'success');
+                return true;
             } catch (error) {
                 console.error('Error:', error);
                 showToast('Error al actualizar estado', 'error');
+                return false;
             }
+        }
+
+        async function toggleActivo(id, event) {
+            event.preventDefault();
+            const operario = allOperarios.find(o => o.id === id);
+            if (!operario || operario.estado === 'pendiente') return;
+            const nuevo = operario.estado === 'activo' ? 'inactivo' : 'activo';
+            if (await updateEstado(id, nuevo)) showToast('Estado actualizado', 'success');
+        }
+
+        async function rejectOperario(id) {
+            const operario = allOperarios.find(o => o.id === id);
+            if (!operario) return;
+            if (!confirm(`¿Rechazar a ${operario.usuario}? Quedara como INACTIVO y no aparecera en productividad ni bonos.`)) return;
+            if (await updateEstado(id, 'inactivo')) showToast('Operario rechazado', 'success');
+        }
+
+        async function fetchMovimientosRecientes(usuario) {
+            const hasta = new Date();
+            const desde = new Date();
+            desde.setDate(desde.getDate() - 30);
+            const fmt = (d) => d.toISOString().slice(0, 10);
+            const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Prefer: 'count=exact' };
+            const usuarioUpper = (usuario || '').toUpperCase();
+            try {
+                const [rc, rd] = await Promise.all([
+                    fetch(`${SUPABASE_URL}/rest/v1/3-historial_cajas?usuario=eq.${encodeURIComponent(usuarioUpper)}&dia=gte.${fmt(desde)}&dia=lte.${fmt(hasta)}&select=id&limit=1`, { headers }),
+                    fetch(`${SUPABASE_URL}/rest/v1/3-historial_destino?usuario=eq.${encodeURIComponent(usuarioUpper)}&dia=gte.${fmt(desde)}&dia=lte.${fmt(hasta)}&select=id&limit=1`, { headers })
+                ]);
+                const parseCount = (r) => {
+                    const range = r.headers.get('content-range') || '';
+                    const m = range.match(/\/(\d+|\*)$/);
+                    return m && m[1] !== '*' ? parseInt(m[1], 10) : 0;
+                };
+                return { cajas: parseCount(rc), destino: parseCount(rd) };
+            } catch { return { cajas: 0, destino: 0 }; }
+        }
+
+        async function openApproveModal(id) {
+            const operario = allOperarios.find(o => o.id === id);
+            if (!operario) return;
+
+            currentOperarioId = id;
+            isApprovingPendiente = true;
+            modalTitle.textContent = 'Incorporar operario al equipo';
+
+            document.getElementById('rutInput').value = operario.rut || '';
+            document.getElementById('usuarioInput').value = operario.usuario || '';
+            document.getElementById('nombreInput').value = operario.nombre || operario.usuario || '';
+            document.getElementById('cargoInput').value = operario.cargo || '';
+            document.getElementById('tipoEquipoInput').value = operario.tipo_equipo || '';
+            document.getElementById('factorInput').value = operario.factor_ajustado || 1.0;
+
+            const hint = document.getElementById('approveHint');
+            hint.style.display = 'block';
+            hint.innerHTML = `Cargando movimientos recientes de <strong>${escapeHtml(operario.usuario)}</strong>...`;
+
+            clearFormErrors();
+            operarioModal.classList.add('active');
+
+            const { cajas, destino } = await fetchMovimientosRecientes(operario.usuario);
+            let sugerencia = '';
+            if (cajas > 0 && destino === 0) sugerencia = ' → probablemente <strong>Recepcionista</strong>.';
+            else if (destino > 0 && cajas === 0) sugerencia = ' → probablemente <strong>Operador Grúa</strong>.';
+            else if (cajas > 0 && destino > 0) sugerencia = ' → hace ambos tipos de movimiento.';
+            hint.innerHTML = `Últimos 30 días para <strong>${escapeHtml(operario.usuario)}</strong>: <strong>${cajas.toLocaleString('es-CL')}</strong> LPN cajas, <strong>${destino.toLocaleString('es-CL')}</strong> LPN destino${sugerencia} Seleccioná el cargo que corresponda.`;
         }
 
         function openDeleteConfirm(id) {
