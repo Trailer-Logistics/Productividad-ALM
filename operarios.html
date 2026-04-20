@@ -1307,8 +1307,9 @@
         async function rejectOperario(id) {
             const operario = allOperarios.find(o => o.id === id);
             if (!operario) return;
-            if (!confirm(`¿Rechazar a ${operario.usuario}? Quedara como INACTIVO y no aparecera en productividad ni bonos.`)) return;
-            if (await updateEstado(id, 'inactivo')) showToast('Operario rechazado', 'success');
+            if (await updateEstado(id, 'inactivo')) {
+                showToast(`${operario.usuario} rechazado (inactivo)`, 'success');
+            }
         }
 
         async function fetchMovimientosRecientes(usuario) {
