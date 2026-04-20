@@ -176,9 +176,13 @@
     <!-- Configuracion del pozo (pallets facturados → valor x tramo → pozo total) -->
     <div class="admin-config" style="border-left: 4px solid var(--navy);">
         <div class="filter-group">
-            <label for="palletsFacturados">Pallets facturados del mes</label>
-            <input type="number" id="palletsFacturados" min="0" step="1" value="0" />
-            <span style="font-size:10px;color:var(--slate);margin-top:4px">
+            <label for="palletsFacturados">Pallets facturados (auto desde minuta)</label>
+            <div style="display:flex;gap:6px">
+                <input type="number" id="palletsFacturados" min="0" step="1" value="0" style="flex:1" />
+                <button class="btn-export" id="btnRecalcularPallets" title="Recalcular desde minuta operacional" style="padding:8px 10px">🔄</button>
+            </div>
+            <span style="font-size:10px;color:var(--slate);margin-top:4px" id="palletsDesglose">-</span>
+            <span style="font-size:10px;color:var(--slate);margin-top:2px">
                 ≤15.000 → $75 · 15.001-25.000 → $85 · 25.001-30.000 → $115 · >30.000 → $125
             </span>
         </div>
@@ -534,6 +538,17 @@ function valorPorTramo(pallets) {
 
 let saveTimer = null;
 
+async function fetchPalletsDesdeMinuta(desde, hasta) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_3_pallets_facturados`, {
+        method: 'POST',
+        headers: ADMIN_HEADERS,
+        body: JSON.stringify({ p_desde: desde, p_hasta: hasta })
+    });
+    if (!r.ok) throw new Error('Error consultando minuta: HTTP ' + r.status);
+    const rows = await r.json();
+    return rows[0] || { total_pallets: 0, total_in: 0, total_out: 0, lineas: 0 };
+}
+
 async function fetchBonoConfig(anio, mes) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/3-bono_config_mensual?anio=eq.${anio}&mes=eq.${mes}&limit=1`, { headers: ADMIN_HEADERS });
     if (!r.ok) return null;
@@ -566,8 +581,36 @@ async function loadBonoConfig() {
     const anio = parseInt($('anioBono').value, 10);
     const mes = parseInt($('mesBono').value, 10);
     const cfg = await fetchBonoConfig(anio, mes);
-    $('palletsFacturados').value = cfg?.pallets_facturados ?? 0;
-    renderPozoConfig();
+    if (cfg && cfg.pallets_facturados > 0) {
+        // Valor previamente guardado (quizas con override manual)
+        $('palletsFacturados').value = cfg.pallets_facturados;
+        $('palletsDesglose').textContent = 'Valor guardado · use 🔄 para recalcular desde minuta';
+        renderPozoConfig();
+    } else {
+        // Sin valor guardado → calcular desde minuta
+        await recalcularDesdeMinuta(true);
+    }
+}
+
+async function recalcularDesdeMinuta(persist) {
+    const { desde, hasta } = periodoActual();
+    $('palletsDesglose').textContent = 'Calculando desde minuta...';
+    try {
+        const data = await fetchPalletsDesdeMinuta(desde, hasta);
+        const total = Math.round(parseFloat(data.total_pallets));
+        const tin = Math.round(parseFloat(data.total_in));
+        const tout = Math.round(parseFloat(data.total_out));
+        $('palletsFacturados').value = total;
+        $('palletsDesglose').textContent = `${fmt(tin)} IN + ${fmt(tout)} OUT · ${fmt(data.lineas)} lineas (desde minuta)`;
+        const { valor, pozo } = renderPozoConfig();
+        if (persist) {
+            const anio = parseInt($('anioBono').value, 10);
+            const mes = parseInt($('mesBono').value, 10);
+            try { await upsertBonoConfig(anio, mes, total, valor, pozo); } catch (e) { console.error(e); }
+        }
+    } catch (e) {
+        $('palletsDesglose').textContent = 'Error: ' + e.message;
+    }
 }
 
 function onPalletsChange() {
@@ -830,7 +873,11 @@ function exportarAdmin() {
     $('anioBono').addEventListener('change', () => { actualizarPeriodo(); loadBonoConfig(); loadAdminsSection(); });
     $('btnConsultar').addEventListener('click', consultar);
     $('btnExportar').addEventListener('click', exportar);
-    $('palletsFacturados').addEventListener('input', onPalletsChange);
+    $('palletsFacturados').addEventListener('input', () => {
+        onPalletsChange();
+        $('palletsDesglose').textContent = 'Override manual (no coincide con la minuta)';
+    });
+    $('btnRecalcularPallets').addEventListener('click', () => recalcularDesdeMinuta(true));
 
     // Admin
     $('btnAddAdmin').addEventListener('click', openAdminModal);
