@@ -351,6 +351,49 @@
             background: #FDE68A;
         }
 
+        .help-panel {
+            background: var(--white);
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+        .help-panel summary {
+            cursor: pointer;
+            padding: 14px 20px;
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--navy);
+            list-style: none;
+            background: #F0F9FF;
+            border-left: 4px solid #0284C7;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .help-panel summary::-webkit-details-marker { display: none; }
+        .help-panel summary::after { content: '▸'; transition: transform 0.2s; color: var(--slate); font-size: 16px; }
+        .help-panel[open] summary::after { transform: rotate(90deg); }
+        .help-hint { font-size: 11px; color: var(--slate); font-weight: 400; margin-left: 8px; }
+        .help-content { padding: 18px 24px 22px; line-height: 1.55; font-size: 13px; color: #212621; }
+        .help-content h3 { margin: 14px 0 10px; font-size: 13px; font-weight: 700; color: var(--navy); }
+        .help-content h3:first-child { margin-top: 0; }
+        .help-list { padding-left: 20px; margin: 0; }
+        .help-list li { margin-bottom: 8px; }
+        .help-list strong { color: var(--navy); }
+        .help-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        .help-table th {
+            text-align: left; padding: 8px 12px; background: var(--ice-grey);
+            font-size: 11px; font-weight: 600; color: var(--slate); text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .help-table td { padding: 8px 12px; border-bottom: 1px solid var(--ice-grey); vertical-align: top; }
+        .help-table tr:last-child td { border-bottom: none; }
+        .help-note { background: #FEF3C7; border-left: 3px solid #D97706; padding: 10px 14px; border-radius: 6px; font-size: 12px; color: #78350F; margin-top: 4px; }
+        .hs { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .hs.pendiente { background: #FEF3C7; color: #92400E; }
+        .hs.activo { background: #D1F4E5; color: #065F46; }
+        .hs.inactivo { background: #FEE2E2; color: #7F1D1D; }
+
         .pending-alert {
             background: #FEF3C7;
             border: 1px solid #FCD34D;
@@ -715,6 +758,44 @@
         <div class="page-header">
             <h1>Gestión de Operarios</h1>
         </div>
+
+        <!-- Panel de ayuda -->
+        <details class="help-panel">
+            <summary>
+                <span>📘 ¿Cómo funcionan los operarios? <span class="help-hint">(haz clic para expandir)</span></span>
+            </summary>
+            <div class="help-content">
+                <h3>Los 3 estados</h3>
+                <table class="help-table">
+                    <thead><tr><th>Estado</th><th>Cómo llega ahí</th><th>¿Cuenta en reportes?</th></tr></thead>
+                    <tbody>
+                        <tr><td><span class="hs pendiente">Pendiente</span></td><td>El sistema lo detecta solo cuando aparece un usuario WMS nuevo tras cargar datos.</td><td>❌ No, hasta que lo apruebes.</td></tr>
+                        <tr><td><span class="hs activo">Activo</span></td><td>Lo incorporás desde pendiente, o reactivás uno inactivo.</td><td>✅ Sí en productividad, dashboard y bonos.</td></tr>
+                        <tr><td><span class="hs inactivo">Inactivo</span></td><td>Lo rechazás o destildás el badge de activo.</td><td>❌ No. Sus datos históricos se preservan.</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Las 4 acciones</h3>
+                <ul class="help-list">
+                    <li><strong>✓ Incorporar</strong> (pendiente → activo): se suman sus movimientos al bono, productividad y dashboard. Se completa cargo, RUT y factor al aprobar.</li>
+                    <li><strong>✗ Rechazar</strong> (pendiente → inactivo): queda fuera. Sus movimientos históricos del WMS siguen guardados pero no se cuentan en reportes.</li>
+                    <li><strong>Badge Activo/Inactivo</strong> (clic en el badge): toggle rápido. Útil si alguien se va de vacaciones/licencia larga y no querés que distorsione el bono.</li>
+                    <li><strong>🗑 Eliminar</strong> (borrado permanente): lo borra del maestro. ⚠️ Si ese usuario vuelve a mover en el WMS, al próximo upload aparece como <em>pendiente</em> otra vez (sin el cargo/RUT que tenías antes).</li>
+                </ul>
+
+                <h3>💡 Regla de oro</h3>
+                <ul class="help-list">
+                    <li>Alguien <strong>dejó la empresa</strong> → marcalo <strong>Inactivo</strong>. No eliminar. Así preservás su historial.</li>
+                    <li>Es un <strong>error/duplicado</strong> que nunca debió existir → <strong>Eliminar</strong>.</li>
+                    <li>Un <strong>pendiente sin uso real</strong> (ej: visitante que movió una vez) → <strong>Rechazar</strong>.</li>
+                </ul>
+
+                <h3>🔍 Dato técnico</h3>
+                <p class="help-note">
+                    Los movimientos del WMS siempre se guardan cuando cargás data, sin importar el estado del operario. Lo que controla el estado es <strong>quién aparece en los reportes</strong>, no qué se guarda. Los datos no se pierden.
+                </p>
+            </div>
+        </details>
 
         <!-- Alerta pendientes -->
         <div class="pending-alert" id="pendingAlert">
