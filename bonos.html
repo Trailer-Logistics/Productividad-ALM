@@ -224,8 +224,9 @@
             <input type="number" id="pozoAdmin" min="0" step="1000" value="518987" />
         </div>
         <div class="filter-group">
-            <label for="regaloAdmin">Monto regalo por cumplimiento ($)</label>
+            <label for="regaloAdmin">Regalo base ($) — se aplica según cumplimiento</label>
             <input type="number" id="regaloAdmin" min="0" step="1000" value="20000" />
+            <span style="font-size:10px;color:var(--slate);margin-top:4px">100%→base · 95-99%→75% · 90-94%→50% · &lt;90%→0</span>
         </div>
         <button class="btn-add-admin" id="btnAddAdmin">+ Agregar administrativo</button>
         <button class="btn-export" id="btnExportarAdmin" disabled>Exportar Excel</button>
@@ -261,7 +262,7 @@
                     <th class="num">Dinero x persona</th>
                     <th class="num">Descuento</th>
                     <th class="num">Bono real</th>
-                    <th style="text-align:center">Regalo</th>
+                    <th class="num">Regalo (auto)</th>
                     <th class="num">Total</th>
                     <th></th>
                 </tr>
@@ -533,15 +534,24 @@ async function upsertBonoMensual(admin_id, anio, mes, patch) {
     return saved;
 }
 
-function calcularAdmin(admin, bonoRow, pozo, regalo) {
+// Regalo segun cumplimiento: 100% → base, 95-99% → 75% base, 90-94% → 50% base, <90% → 0
+function regaloPorCumplimiento(cumpl, regaloBase) {
+    const pct = cumpl * 100;
+    if (pct >= 100) return regaloBase;
+    if (pct >= 95) return regaloBase * 0.75;
+    if (pct >= 90) return regaloBase * 0.50;
+    return 0;
+}
+
+function calcularAdmin(admin, bonoRow, pozo, regaloBase) {
     const cumpl = bonoRow ? parseFloat(bonoRow.cumplimiento) : 1.0;
     const desc = bonoRow ? parseFloat(bonoRow.descuento) : 0;
-    const leCorr = bonoRow ? bonoRow.le_corresponde : false;
     const pct = parseFloat(admin.porcentaje) || 0;
     const dineroPersona = pozo * pct;
     const bonoReal = dineroPersona * cumpl - desc;
-    const total = bonoReal + (leCorr ? regalo : 0);
-    return { pct, cumpl, desc, leCorr, dineroPersona, bonoReal, total };
+    const regalo = regaloPorCumplimiento(cumpl, regaloBase);
+    const total = bonoReal + regalo;
+    return { pct, cumpl, desc, regalo, dineroPersona, bonoReal, total };
 }
 
 function fmtMoney(n) {
@@ -580,9 +590,7 @@ function renderAdmins() {
                 <input type="number" class="inline-edit" data-field="descuento" min="0" step="1000" value="${Math.round(c.desc)}" />
             </td>
             <td class="num">${fmtMoney(c.bonoReal)}</td>
-            <td style="text-align:center">
-                <input type="checkbox" class="inline-edit" data-field="le_corresponde" ${c.leCorr ? 'checked' : ''} />
-            </td>
+            <td class="num" style="color:${c.regalo > 0 ? 'var(--success)' : 'var(--silver)'}">${fmtMoney(c.regalo)}</td>
             <td class="num"><strong>${fmtMoney(c.total)}</strong></td>
             <td><button class="btn-delete-row" data-admin-id="${admin.id}" title="Eliminar">🗑</button></td>
         </tr>`;
@@ -616,17 +624,19 @@ async function handleAdminEdit(e) {
         if (value > 1) value = 1;
     } else if (field === 'descuento') {
         value = parseFloat(e.target.value) || 0;
-    } else if (field === 'le_corresponde') {
-        value = e.target.checked;
     }
     e.target.classList.add('saving'); e.target.classList.remove('saved');
     try {
         const pozo = parseFloat($('pozoAdmin').value) || 0;
-        const regalo = parseFloat($('regaloAdmin').value) || 0;
+        const regaloBase = parseFloat($('regaloAdmin').value) || 0;
+        // le_corresponde se deriva del cumplimiento (regalo > 0)
+        const nuevoCumpl = field === 'cumplimiento' ? value : (bonoMensualMap.get(admin_id)?.cumplimiento ?? 1.0);
+        const leCorr = regaloPorCumplimiento(nuevoCumpl, regaloBase) > 0;
         await upsertBonoMensual(admin_id, anio, mes, {
             [field]: value,
+            le_corresponde: leCorr,
             pozo_aplicado: pozo,
-            regalo_aplicado: regalo
+            regalo_aplicado: regaloBase
         });
         e.target.classList.remove('saving'); e.target.classList.add('saved');
         setTimeout(() => e.target.classList.remove('saved'), 1000);
@@ -717,7 +727,7 @@ function exportarAdmin() {
             'Dinero x persona': Math.round(c.dineroPersona),
             'Descuento': Math.round(c.desc),
             'Bono real': Math.round(c.bonoReal),
-            'Le corresponde regalo': c.leCorr ? 1 : 0,
+            'Regalo': Math.round(c.regalo),
             'Bono + Regalo': Math.round(c.total)
         };
     });
