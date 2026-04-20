@@ -301,6 +301,7 @@
             <thead>
                 <tr>
                     <th>Nombre</th>
+                    <th>RUT</th>
                     <th>Cargo</th>
                     <th class="num">% Part.</th>
                     <th class="num">% Cumpl.</th>
@@ -313,7 +314,7 @@
                 </tr>
             </thead>
             <tbody id="tbodyAdmin">
-                <tr><td colspan="10" class="empty-state">Cargando administrativos...</td></tr>
+                <tr><td colspan="11" class="empty-state">Cargando administrativos...</td></tr>
             </tbody>
         </table>
     </div>
@@ -723,7 +724,10 @@ async function fetchBonoMensual(anio, mes) {
 
 async function upsertBonoMensual(admin_id, anio, mes, patch) {
     const existing = bonoMensualMap.get(admin_id);
-    const body = { admin_id, anio, mes, ...existing, ...patch, updated_at: new Date().toISOString() };
+    // Si es la primera vez que se guarda un registro para este admin/mes,
+    // aplicar defaults (el usuario aun no destildo nada, asumimos considerar=true)
+    const defaults = existing ? {} : { le_corresponde: true, cumplimiento: 1.0, descuento: 0 };
+    const body = { admin_id, anio, mes, ...defaults, ...existing, ...patch, updated_at: new Date().toISOString() };
     delete body.id; delete body.created_at;
     // Upsert via on-conflict
     const url = `${SUPABASE_URL}/rest/v1/3-administrativos_bono_mensual?on_conflict=admin_id,anio,mes`;
@@ -769,7 +773,7 @@ function fmtMoney(n) {
 function renderAdmins() {
     const tbody = $('tbodyAdmin');
     if (!admins.length) {
-        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">Sin administrativos. Agregá el primero arriba.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="empty-state">Sin administrativos. Agregá el primero arriba.</td></tr>';
         $('kpiAdminCount').textContent = '0';
         $('kpiAdminPct').textContent = '0%';
         $('kpiAdminBono').textContent = '$0';
@@ -788,6 +792,7 @@ function renderAdmins() {
         const cumplPct = Math.round(c.cumpl * 100);
         return `<tr data-admin-id="${admin.id}">
             <td>${admin.nombre || '-'}</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${admin.rut || '-'}</td>
             <td><span class="cargo-tag">${admin.cargo || '-'}</span></td>
             <td class="num">${(c.pct * 100).toFixed(2)}%</td>
             <td class="num">
@@ -866,7 +871,7 @@ async function loadAdminsSection() {
         actualizarDivisionPozo();
         renderAdmins();
     } catch (err) {
-        $('tbodyAdmin').innerHTML = `<tr><td colspan="10" class="empty-state" style="color:var(--error)">Error: ${err.message}</td></tr>`;
+        $('tbodyAdmin').innerHTML = `<tr><td colspan="11" class="empty-state" style="color:var(--error)">Error: ${err.message}</td></tr>`;
     }
 }
 

@@ -375,7 +375,7 @@ CREATE TABLE IF NOT EXISTS "3-administrativos_bono_mensual" (
     mes             INTEGER NOT NULL CHECK (mes BETWEEN 1 AND 12),
     cumplimiento    NUMERIC(3,2) DEFAULT 1.00,  -- 0.00 a 1.00
     descuento       NUMERIC(12,2) DEFAULT 0,
-    le_corresponde  BOOLEAN DEFAULT FALSE,       -- si cobra el regalo
+    le_corresponde  BOOLEAN DEFAULT TRUE,        -- si se considera el regalo (default: si). Se destilda manualmente en bonos.html si no se quiere
     pozo_aplicado   NUMERIC(12,2) DEFAULT 0,     -- snapshot del pozo al editar
     regalo_aplicado NUMERIC(12,2) DEFAULT 0,     -- snapshot del regalo al editar
     created_at      TIMESTAMPTZ DEFAULT NOW(),
