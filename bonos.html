@@ -1059,9 +1059,10 @@ async function rellenarPlantilla(file) {
     let matched = 0, totalRows = 0;
     const notFound = [];
 
-    // 4) Procesar cada sheet que tenga las columnas correctas
+    // 4) Procesar cada sheet: parsear para identificar celdas a tocar,
+    //    luego modificar el STRING XML original con regex (no re-serializar).
     for (const sheet of sheets) {
-        const xmlStr = await zip.file(sheet.path)?.async('string');
+        let xmlStr = await zip.file(sheet.path)?.async('string');
         if (!xmlStr) continue;
         const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
         const rows = doc.getElementsByTagName('row');
@@ -1081,18 +1082,19 @@ async function rellenarPlantilla(file) {
         if (!rutH || !bonoH) continue;
         const nombreH = headers.find(h => /^nombre$/i.test(h.text || ''));
 
-        // Iterar filas desde la 2
+        // Lista de {ref, monto} a reemplazar
+        const mods = [];
         for (let r = 1; r < rows.length; r++) {
             const row = rows[r];
             const cells = row.getElementsByTagName('c');
             let rutText = null;
-            let bonoCell = null;
+            let bonoRef = null;
             let nombreText = '';
             for (let c = 0; c < cells.length; c++) {
                 const cell = cells[c];
                 const col = colLetter(cell.getAttribute('r'));
                 if (col === rutH.col) rutText = cellText(cell, sharedStrings);
-                if (col === bonoH.col) bonoCell = cell;
+                if (col === bonoH.col) bonoRef = cell.getAttribute('r');
                 if (nombreH && col === nombreH.col) nombreText = cellText(cell, sharedStrings) || '';
             }
             if (!rutText) continue;
@@ -1104,29 +1106,43 @@ async function rellenarPlantilla(file) {
                 continue;
             }
 
-            // Escribir monto en la celda BONO PRODUCCION
+            // Si la celda bono no existe aun, se usa la direccion calculada
             const rowNum = row.getAttribute('r');
-            const bonoAddr = bonoH.col + rowNum;
-            if (!bonoCell) {
-                // crear celda nueva
-                bonoCell = doc.createElementNS(row.namespaceURI, 'c');
-                bonoCell.setAttribute('r', bonoAddr);
-                row.appendChild(bonoCell);
-            } else {
-                // limpiar valor anterior
-                while (bonoCell.firstChild) bonoCell.removeChild(bonoCell.firstChild);
-                bonoCell.removeAttribute('t');
-            }
-            const vEl = doc.createElementNS(row.namespaceURI, 'v');
-            vEl.textContent = String(bono.monto);
-            bonoCell.appendChild(vEl);
+            const ref = bonoRef || (bonoH.col + rowNum);
+            mods.push({ ref, monto: bono.monto, existed: !!bonoRef, rowNum: parseInt(rowNum, 10) });
             matched++;
         }
 
-        // Serializar solo esta hoja
-        const declaration = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
-        const newXml = declaration + new XMLSerializer().serializeToString(doc);
-        zip.file(sheet.path, newXml);
+        if (mods.length === 0) {
+            // Igual guardamos el original (intocado) para no perder nada
+            continue;
+        }
+
+        // 4b) Modificar el STRING XML original sin re-serializar
+        for (const mod of mods) {
+            if (mod.existed) {
+                // Reemplazar la celda existente <c r="REF" ...>...</c> o <c r="REF" .../>
+                const esc = mod.ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const patSelfClose = new RegExp(`<c([^>]*\\br="${esc}"[^>]*?)\\/>`, '');
+                const patOpenClose = new RegExp(`<c([^>]*\\br="${esc}"[^>]*?)>[\\s\\S]*?<\\/c>`, '');
+                const replaceFn = (_m, attrs) => {
+                    // Quitar t="..." (tipo) y cualquier referencia de formula residual; conservar s="..." y otros
+                    const cleanAttrs = attrs.replace(/\s+t="[^"]*"/g, '');
+                    return `<c${cleanAttrs}><v>${mod.monto}</v></c>`;
+                };
+                if (patSelfClose.test(xmlStr)) {
+                    xmlStr = xmlStr.replace(patSelfClose, replaceFn);
+                } else {
+                    xmlStr = xmlStr.replace(patOpenClose, replaceFn);
+                }
+            } else {
+                // Insertar nueva celda antes del </row> correspondiente
+                const rowPat = new RegExp(`(<row[^>]*\\br="${mod.rowNum}"[^>]*>)([\\s\\S]*?)(<\\/row>)`, '');
+                const newCell = `<c r="${mod.ref}"><v>${mod.monto}</v></c>`;
+                xmlStr = xmlStr.replace(rowPat, (_m, a, b, c) => a + b + newCell + c);
+            }
+        }
+        zip.file(sheet.path, xmlStr);
     }
 
     // 5) Generar zip y descargar
