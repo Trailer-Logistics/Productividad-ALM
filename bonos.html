@@ -257,11 +257,12 @@
                     <th class="num">Movs. ajustados</th>
                     <th class="num">% del total</th>
                     <th style="text-align:center">Amonestación</th>
+                    <th style="text-align:center">Ausencias</th>
                     <th class="num">Bono $</th>
                 </tr>
             </thead>
             <tbody id="tbody">
-                <tr><td colspan="11" class="empty-state">Selecciona un rango de fechas y haz clic en "Consultar".</td></tr>
+                <tr><td colspan="12" class="empty-state">Selecciona un rango de fechas y haz clic en "Consultar".</td></tr>
             </tbody>
         </table>
     </div>
@@ -517,7 +518,7 @@ function render({ list, total, dias }) {
 
     const tbody = $('tbody');
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="11" class="empty-state">Sin movimientos en el rango seleccionado.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="empty-state">Sin movimientos en el rango seleccionado.</td></tr>';
         actualizarDivisionPozo();
         return;
     }
@@ -533,8 +534,9 @@ function render({ list, total, dias }) {
         const divisor = factor > 0 ? factor : 1;
         const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
         const amon = flag?.carta_amonestacion === true;
+        const ausen = flag?.ausencia === true;
         const ajustado = r.movimientos / divisor;
-        return { ...r, factor, amon, ajustado, peso: ajustado * (amon ? 0.5 : 1), rut: op.rut || '-' };
+        return { ...r, factor, amon, ausen, ajustado, peso: ajustado * (amon ? 0.5 : 1) * (ausen ? 0.5 : 1), rut: op.rut || '-' };
     });
     const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
     // Ordenar por peso desc (lo que realmente se paga)
@@ -547,12 +549,17 @@ function render({ list, total, dias }) {
         const p = r.peso / totalPeso;
         const bono = pozoOper * p;
         const amon = r.amon;
+        const ausen = r.ausen;
         const factorTxt = r.factor !== 1 ? r.factor.toFixed(2) : '1.00';
         // Factor >1 divide mas → menos bono (rojo); <1 divide menos → mas bono (verde)
         const factorStyle = r.factor > 1 ? 'color:var(--error)' : (r.factor < 1 ? 'color:var(--success)' : 'color:var(--slate)');
         const amonBg = amon ? 'rgba(201,53,53,0.12)' : 'var(--ice-grey)';
         const amonBorder = amon ? 'rgba(201,53,53,0.4)' : 'var(--ice-grey)';
         const amonColor = amon ? 'var(--error)' : 'var(--slate)';
+        const ausenBg = ausen ? 'rgba(212,134,11,0.12)' : 'var(--ice-grey)';
+        const ausenBorder = ausen ? 'rgba(212,134,11,0.4)' : 'var(--ice-grey)';
+        const ausenColor = ausen ? 'var(--warning)' : 'var(--slate)';
+        const bonoReducido = amon || ausen;
         return `<tr>
             <td><span class="${posClass}">${i + 1}</span></td>
             <td>${r.nombre || '-'}</td>
@@ -569,13 +576,22 @@ function render({ list, total, dias }) {
                     ${amon ? 'Amonestado (peso ×½)' : 'Sin amonestación'}
                 </label>
             </td>
-            <td class="num"><strong ${amon ? 'style="color:var(--error)"' : ''}>${fmtMoney(bono)}</strong></td>
+            <td style="text-align:center">
+                <label title="Ausencia (peso del bono a la mitad; lo que pierde se reparte entre los demás)" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:4px 10px;border-radius:16px;background:${ausenBg};border:1px solid ${ausenBorder};font-size:11px;font-family:'JetBrains Mono',monospace;color:${ausenColor}">
+                    <input type="checkbox" class="ticket-ausen" data-usuario="${(r.usuario || '').toUpperCase()}" ${ausen ? 'checked' : ''} style="width:13px;height:13px;margin:0" />
+                    ${ausen ? 'Ausente (peso ×½)' : 'Sin ausencia'}
+                </label>
+            </td>
+            <td class="num"><strong ${bonoReducido ? 'style="color:var(--error)"' : ''}>${fmtMoney(bono)}</strong></td>
         </tr>`;
     }).join('');
 
-    // Bind checkboxes amonestación
+    // Bind checkboxes amonestación y ausencias
     tbody.querySelectorAll('input.ticket-amon').forEach(chk => {
         chk.addEventListener('change', handleAmonestacionToggle);
+    });
+    tbody.querySelectorAll('input.ticket-ausen').forEach(chk => {
+        chk.addEventListener('change', handleAusenciaToggle);
     });
 }
 
@@ -621,7 +637,7 @@ function actualizarPeriodo() {
 async function consultar() {
     const { desde, hasta } = periodoActual();
     $('btnConsultar').disabled = true;
-    $('tbody').innerHTML = '<tr><td colspan="11" class="loading">Cargando...</td></tr>';
+    $('tbody').innerHTML = '<tr><td colspan="12" class="loading">Cargando...</td></tr>';
     try {
         const anio = parseInt($('anioBono').value, 10);
         const mes = parseInt($('mesBono').value, 10);
@@ -896,7 +912,20 @@ async function handleAmonestacionToggle(e) {
     const mes = parseInt($('mesBono').value, 10);
     try {
         await upsertOperarioFlag(usuario, anio, mes, { carta_amonestacion: checked });
-        // Re-renderizar para reflejar reducción
+        if (lastResult) render(lastResult);
+    } catch (err) {
+        alert('Error al guardar: ' + err.message);
+        e.target.checked = !checked;
+    }
+}
+
+async function handleAusenciaToggle(e) {
+    const usuario = e.target.dataset.usuario;
+    const checked = e.target.checked;
+    const anio = parseInt($('anioBono').value, 10);
+    const mes = parseInt($('mesBono').value, 10);
+    try {
+        await upsertOperarioFlag(usuario, anio, mes, { ausencia: checked });
         if (lastResult) render(lastResult);
     } catch (err) {
         alert('Error al guardar: ' + err.message);
@@ -1054,7 +1083,6 @@ function construirBonosPorRut() {
     const pozo = parseFloat($('pozoAdmin').value) || 0;
     const regalo = parseFloat($('regaloAdmin').value) || 0;
 
-    // Operarios (factor divide; amonestacion reduce peso 50% y se renormaliza al pozo)
     if (lastResult?.list?.length) {
         const pozoOper = currentPozoOperarios;
         const enriched = lastResult.list.map(r => {
@@ -1063,8 +1091,9 @@ function construirBonosPorRut() {
             const divisor = factor > 0 ? factor : 1;
             const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
             const amon = flag?.carta_amonestacion === true;
+            const ausen = flag?.ausencia === true;
             const ajustado = r.movimientos / divisor;
-            return { ...r, peso: ajustado * (amon ? 0.5 : 1), op };
+            return { ...r, peso: ajustado * (amon ? 0.5 : 1) * (ausen ? 0.5 : 1), op };
         });
         const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
         enriched.forEach(r => {
@@ -1343,7 +1372,6 @@ function exportarConsolidado() {
 
     const filas = [];
 
-    // Operarios (factor divide; amonestacion reduce peso 50% y se renormaliza al pozo)
     if (lastResult && lastResult.list && lastResult.list.length) {
         const pozoOper = currentPozoOperarios;
         const enriched = lastResult.list.map(r => {
@@ -1352,8 +1380,9 @@ function exportarConsolidado() {
             const divisor = factor > 0 ? factor : 1;
             const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
             const amon = flag?.carta_amonestacion === true;
+            const ausen = flag?.ausencia === true;
             const ajustado = r.movimientos / divisor;
-            return { ...r, amon, peso: ajustado * (amon ? 0.5 : 1), op };
+            return { ...r, amon, ausen, peso: ajustado * (amon ? 0.5 : 1) * (ausen ? 0.5 : 1), op };
         });
         const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
         enriched.sort((a, b) => b.peso - a.peso);
@@ -1365,6 +1394,7 @@ function exportarConsolidado() {
                 'RUT': r.op.rut || '',
                 'Cargo': r.cargo || '',
                 'Amonestación': r.amon ? 'Sí' : '',
+                'Ausencias': r.ausen ? 'Sí' : '',
                 'Monto': Math.round(pozoOper * p)
             });
         });

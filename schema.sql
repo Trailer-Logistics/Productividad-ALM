@@ -385,6 +385,9 @@ CREATE TABLE IF NOT EXISTS "3-administrativos_bono_mensual" (
 
 CREATE INDEX IF NOT EXISTS idx_admin_bono_periodo ON "3-administrativos_bono_mensual" (anio, mes);
 
+-- Migración: columna ausencia en operarios_bono_mensual
+-- ALTER TABLE "3-operarios_bono_mensual" ADD COLUMN IF NOT EXISTS ausencia BOOLEAN DEFAULT FALSE;
+
 -- RLS abierto (consistente con resto del proyecto)
 ALTER TABLE "3-administrativos" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "3-administrativos_bono_mensual" ENABLE ROW LEVEL SECURITY;
