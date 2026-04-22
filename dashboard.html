@@ -1015,6 +1015,16 @@
                 }
             };
 
+            // Helper: fecha de "ayer" en hora Chile, formato YYYY-MM-DD
+            const ayerEnChile = () => {
+                const ahora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago' }));
+                ahora.setDate(ahora.getDate() - 1);
+                const yyyy = ahora.getFullYear();
+                const mm = String(ahora.getMonth() + 1).padStart(2, '0');
+                const dd = String(ahora.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            };
+
             // Helper: get approximate date from year + week number
             const weekToDate = (anio, semana) => {
                 const jan1 = new Date(anio, 0, 1);
@@ -1063,7 +1073,10 @@
                         allDates.sort();
                         if (allDates.length > 0) {
                             setDateFrom(allDates[0]);
-                            setDateTo(allDates[allDates.length - 1]);
+                            // Nunca incluir "hoy" (los datos aun no estan completos). Tope = ayer.
+                            const ayerCL = ayerEnChile();
+                            const ultimo = allDates[allDates.length - 1];
+                            setDateTo(ultimo > ayerCL ? ayerCL : ultimo);
                         }
                     } catch (err) {
                         console.error('Error fetching data:', err);
@@ -1334,8 +1347,11 @@
                                 <input
                                     type="date"
                                     value={dateFrom}
+                                    max={ayerEnChile()}
                                     onChange={(e) => {
-                                        setDateFrom(e.target.value);
+                                        const v = e.target.value;
+                                        const ayer = ayerEnChile();
+                                        setDateFrom(v && v > ayer ? ayer : v);
                                     }}
                                 />
                             </div>
@@ -1344,8 +1360,11 @@
                                 <input
                                     type="date"
                                     value={dateTo}
+                                    max={ayerEnChile()}
                                     onChange={(e) => {
-                                        setDateTo(e.target.value);
+                                        const v = e.target.value;
+                                        const ayer = ayerEnChile();
+                                        setDateTo(v && v > ayer ? ayer : v);
                                     }}
                                 />
                             </div>
