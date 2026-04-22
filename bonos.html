@@ -256,11 +256,12 @@
                     <th class="num">Factor</th>
                     <th class="num">Movs. ajustados</th>
                     <th class="num">% del total</th>
+                    <th style="text-align:center">Amonestación</th>
                     <th class="num">Bono $</th>
                 </tr>
             </thead>
             <tbody id="tbody">
-                <tr><td colspan="10" class="empty-state">Selecciona un rango de fechas y haz clic en "Consultar".</td></tr>
+                <tr><td colspan="11" class="empty-state">Selecciona un rango de fechas y haz clic en "Consultar".</td></tr>
             </tbody>
         </table>
     </div>
@@ -437,6 +438,37 @@ async function fetchOperariosMap() {
 }
 
 let operariosMap = new Map();
+let operariosBonoMap = new Map(); // usuario → { carta_amonestacion, anio, mes }
+
+async function fetchOperariosBonoMensual(anio, mes) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/3-operarios_bono_mensual?anio=eq.${anio}&mes=eq.${mes}`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+    });
+    if (!r.ok) return new Map();
+    const rows = await r.json();
+    const m = new Map();
+    rows.forEach(row => m.set((row.usuario || '').toUpperCase(), row));
+    return m;
+}
+
+async function upsertOperarioFlag(usuario, anio, mes, patch) {
+    const existing = operariosBonoMap.get(usuario.toUpperCase());
+    const body = { usuario, anio, mes, ...existing, ...patch, updated_at: new Date().toISOString() };
+    delete body.id; delete body.created_at;
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/3-operarios_bono_mensual?on_conflict=usuario,anio,mes`, {
+        method: 'POST',
+        headers: {
+            apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=representation'
+        },
+        body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error('Error guardando flag operario: HTTP ' + r.status);
+    const saved = (await r.json())[0];
+    operariosBonoMap.set(usuario.toUpperCase(), saved);
+    return saved;
+}
 
 async function fetchAll(desde, hasta) {
     const pageSize = 1000;
@@ -485,7 +517,7 @@ function render({ list, total, dias }) {
 
     const tbody = $('tbody');
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">Sin movimientos en el rango seleccionado.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="empty-state">Sin movimientos en el rango seleccionado.</td></tr>';
         actualizarDivisionPozo();
         return;
     }
@@ -508,10 +540,16 @@ function render({ list, total, dias }) {
         const posClass = i < 3 ? 'pos top' : 'pos';
         const barW = Math.round((r.ajustado / max) * 100);
         const p = r.ajustado / totalAjustado;
-        const bono = pozoOper * p;
+        const bonoBase = pozoOper * p;
+        const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
+        const amon = flag?.carta_amonestacion === true;
+        const bono = amon ? bonoBase * 0.5 : bonoBase;
         const factorTxt = r.factor !== 1 ? r.factor.toFixed(2) : '1.00';
         // Factor >1 divide mas → menos bono (rojo); <1 divide menos → mas bono (verde)
         const factorStyle = r.factor > 1 ? 'color:var(--error)' : (r.factor < 1 ? 'color:var(--success)' : 'color:var(--slate)');
+        const amonBg = amon ? 'rgba(201,53,53,0.12)' : 'var(--ice-grey)';
+        const amonBorder = amon ? 'rgba(201,53,53,0.4)' : 'var(--ice-grey)';
+        const amonColor = amon ? 'var(--error)' : 'var(--slate)';
         return `<tr>
             <td><span class="${posClass}">${i + 1}</span></td>
             <td>${r.nombre || '-'}</td>
@@ -522,9 +560,20 @@ function render({ list, total, dias }) {
             <td class="num" style="${factorStyle};font-family:'JetBrains Mono',monospace">${factorTxt}</td>
             <td class="num">${fmt(Math.round(r.ajustado))}<span class="bar-wrap"><span class="bar-fill" style="width:${barW}%"></span></span></td>
             <td class="num">${pct(p)}</td>
-            <td class="num"><strong>${fmtMoney(bono)}</strong></td>
+            <td style="text-align:center">
+                <label title="Carta de amonestación (reduce bono a la mitad)" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:4px 10px;border-radius:16px;background:${amonBg};border:1px solid ${amonBorder};font-size:11px;font-family:'JetBrains Mono',monospace;color:${amonColor}">
+                    <input type="checkbox" class="ticket-amon" data-usuario="${(r.usuario || '').toUpperCase()}" ${amon ? 'checked' : ''} style="width:13px;height:13px;margin:0" />
+                    ${amon ? 'Amonestado (−50%)' : 'Sin amonestación'}
+                </label>
+            </td>
+            <td class="num"><strong ${amon ? 'style="color:var(--error);text-decoration:line-through var(--slate);"' : ''}>${fmtMoney(bono)}</strong>${amon ? `<div style="font-size:10px;color:var(--slate)">base ${fmtMoney(bonoBase)}</div>` : ''}</td>
         </tr>`;
     }).join('');
+
+    // Bind checkboxes amonestación
+    tbody.querySelectorAll('input.ticket-amon').forEach(chk => {
+        chk.addEventListener('change', handleAmonestacionToggle);
+    });
 }
 
 // Estado de la division del pozo
@@ -569,10 +618,17 @@ function actualizarPeriodo() {
 async function consultar() {
     const { desde, hasta } = periodoActual();
     $('btnConsultar').disabled = true;
-    $('tbody').innerHTML = '<tr><td colspan="10" class="loading">Cargando...</td></tr>';
+    $('tbody').innerHTML = '<tr><td colspan="11" class="loading">Cargando...</td></tr>';
     try {
-        const [rows, mapa] = await Promise.all([fetchAll(desde, hasta), fetchOperariosMap()]);
+        const anio = parseInt($('anioBono').value, 10);
+        const mes = parseInt($('mesBono').value, 10);
+        const [rows, mapa, flags] = await Promise.all([
+            fetchAll(desde, hasta),
+            fetchOperariosMap(),
+            fetchOperariosBonoMensual(anio, mes)
+        ]);
         operariosMap = mapa;
+        operariosBonoMap = flags;
         lastResult = aggregate(rows);
         lastResult.desde = desde;
         lastResult.hasta = hasta;
@@ -830,6 +886,21 @@ function renderAdmins() {
     });
 }
 
+async function handleAmonestacionToggle(e) {
+    const usuario = e.target.dataset.usuario;
+    const checked = e.target.checked;
+    const anio = parseInt($('anioBono').value, 10);
+    const mes = parseInt($('mesBono').value, 10);
+    try {
+        await upsertOperarioFlag(usuario, anio, mes, { carta_amonestacion: checked });
+        // Re-renderizar para reflejar reducción
+        if (lastResult) render(lastResult);
+    } catch (err) {
+        alert('Error al guardar: ' + err.message);
+        e.target.checked = !checked;
+    }
+}
+
 async function handleAdminEdit(e) {
     const tr = e.target.closest('tr');
     const admin_id = parseInt(tr.dataset.adminId, 10);
@@ -980,7 +1051,7 @@ function construirBonosPorRut() {
     const pozo = parseFloat($('pozoAdmin').value) || 0;
     const regalo = parseFloat($('regaloAdmin').value) || 0;
 
-    // Operarios (factor divide)
+    // Operarios (factor divide, amonestacion reduce 50%)
     if (lastResult?.list?.length) {
         const pozoOper = currentPozoOperarios;
         const enriched = lastResult.list.map(r => {
@@ -992,8 +1063,11 @@ function construirBonosPorRut() {
         const totalAjustado = enriched.reduce((s, r) => s + r.ajustado, 0) || 1;
         enriched.forEach(r => {
             const p = r.ajustado / totalAjustado;
+            const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
+            const amon = flag?.carta_amonestacion === true;
+            const monto = Math.round(pozoOper * p * (amon ? 0.5 : 1));
             const rut = normRut(r.op.rut);
-            if (rut) map.set(rut, { monto: Math.round(pozoOper * p), tipo: 'Operario', nombre: r.nombre });
+            if (rut) map.set(rut, { monto, tipo: 'Operario', nombre: r.nombre });
         });
     }
     // Administrativos
@@ -1266,7 +1340,7 @@ function exportarConsolidado() {
 
     const filas = [];
 
-    // Operarios (factor divide)
+    // Operarios (factor divide, amonestacion reduce 50%)
     if (lastResult && lastResult.list && lastResult.list.length) {
         const pozoOper = currentPozoOperarios;
         const enriched = lastResult.list.map(r => {
@@ -1279,12 +1353,16 @@ function exportarConsolidado() {
         enriched.sort((a, b) => b.ajustado - a.ajustado);
         enriched.forEach(r => {
             const p = r.ajustado / totalAjustado;
+            const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
+            const amon = flag?.carta_amonestacion === true;
+            const monto = Math.round(pozoOper * p * (amon ? 0.5 : 1));
             filas.push({
                 'Tipo': 'Operario',
                 'Nombre': r.nombre || '',
                 'RUT': r.op.rut || '',
                 'Cargo': r.cargo || '',
-                'Monto': Math.round(pozoOper * p)
+                'Amonestación': amon ? 'Sí' : '',
+                'Monto': monto
             });
         });
     }
