@@ -28,8 +28,8 @@
 
     <!-- SheetJS para descarga Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
     <style>
         * {
@@ -989,7 +989,9 @@
                 if (exportingPDF) return;
                 setExportingPDF(true);
                 try {
-                    const { jsPDF } = window.jspdf;
+                    const jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+                    if (!jsPDF) throw new Error('jsPDF no cargó. Recargá la página (Ctrl+F5).');
+                    if (typeof html2canvas === 'undefined') throw new Error('html2canvas no cargó. Recargá la página (Ctrl+F5).');
                     const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
                     const pw = pdf.internal.pageSize.getWidth();
                     const ph = pdf.internal.pageSize.getHeight();
