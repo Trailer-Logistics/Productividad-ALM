@@ -1133,8 +1133,10 @@
                     const itemDate = isDaily
                         ? new Date(item.dia + 'T12:00:00')
                         : new Date(weekToDate(item.anio, item.semana));
-                    const fromDate = dateFrom ? new Date(dateFrom) : null;
-                    const toDate = dateTo ? new Date(dateTo) : null;
+                    // Parsear fechas en local para evitar desfase de zona horaria
+                    // (new Date("2026-04-21") es UTC → el 20 a las 21:00 en Chile)
+                    const fromDate = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
+                    const toDate = dateTo ? new Date(dateTo + 'T23:59:59') : null;
 
                     if (fromDate && itemDate < fromDate) return false;
                     if (toDate && itemDate > toDate) return false;
