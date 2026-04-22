@@ -1000,7 +1000,24 @@
                     const capturarElemento = async (id) => {
                         const el = document.getElementById(id);
                         if (!el) return null;
-                        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true, logging: false });
+                        // Scroll al elemento para que esté totalmente visible y con dimensiones correctas
+                        el.scrollIntoView({ behavior: 'instant', block: 'start' });
+                        // Forzar resize de Recharts para que el SVG se expanda al tamaño correcto
+                        window.dispatchEvent(new Event('resize'));
+                        // Esperar a que Recharts termine de animar/reflow
+                        await new Promise(r => setTimeout(r, 800));
+                        const canvas = await html2canvas(el, {
+                            scale: 2,
+                            backgroundColor: '#FFFFFF',
+                            useCORS: true,
+                            logging: false,
+                            scrollY: 0,
+                            scrollX: 0,
+                            windowWidth: document.documentElement.scrollWidth,
+                            windowHeight: document.documentElement.scrollHeight,
+                            width: el.offsetWidth,
+                            height: el.offsetHeight
+                        });
                         return canvas.toDataURL('image/png');
                     };
                     const agregarImgPagina = (dataUrl, titulo) => {
@@ -1039,8 +1056,10 @@
                     const prevActiveCargos = new Set(activeCargos);
                     for (const cargo of cargos) {
                         setActiveCargos(new Set([cargo]));
-                        // Esperar que React termine el render con el nuevo estado
-                        await new Promise(r => requestAnimationFrame(() => setTimeout(r, 450)));
+                        // Esperar render de React + animación de Recharts
+                        await new Promise(r => requestAnimationFrame(() => setTimeout(r, 900)));
+                        window.dispatchEvent(new Event('resize'));
+                        await new Promise(r => setTimeout(r, 300));
 
                         const imgCargo = await capturarElemento('pdf-chart-cargo');
                         if (imgCargo) { pdf.addPage(); agregarImgPagina(imgCargo, 'Tendencia · ' + cargo); }
