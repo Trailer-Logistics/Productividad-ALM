@@ -524,26 +524,29 @@ function render({ list, total, dias }) {
     actualizarDivisionPozo();
     const pozoOper = currentPozoOperarios;
 
-    // Aplicar factor_ajustado DIVIDIENDO: factor > 1 reduce el bono, < 1 lo aumenta
+    // Aplicar factor_ajustado (DIVIDE) + amonestacion (reduce peso 50%).
+    // El pozo se reparte 100% entre todos usando "peso" como clave de distribucion.
+    // Si un operario esta amonestado, lo que "pierde" se redistribuye al resto.
     const enriched = list.map(r => {
         const op = operariosMap.get((r.usuario || '').toUpperCase()) || {};
         const factor = op.factor || 1;
         const divisor = factor > 0 ? factor : 1;
-        return { ...r, factor, ajustado: r.movimientos / divisor, rut: op.rut || '-' };
+        const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
+        const amon = flag?.carta_amonestacion === true;
+        const ajustado = r.movimientos / divisor;
+        return { ...r, factor, amon, ajustado, peso: ajustado * (amon ? 0.5 : 1), rut: op.rut || '-' };
     });
-    const totalAjustado = enriched.reduce((s, r) => s + r.ajustado, 0) || 1;
-    // Reordenar por bono (ajustado) desc — el ranking refleja lo que se paga
-    enriched.sort((a, b) => b.ajustado - a.ajustado);
-    const max = enriched[0]?.ajustado || 1;
+    const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
+    // Ordenar por peso desc (lo que realmente se paga)
+    enriched.sort((a, b) => b.peso - a.peso);
+    const max = enriched[0]?.peso || 1;
 
     tbody.innerHTML = enriched.map((r, i) => {
         const posClass = i < 3 ? 'pos top' : 'pos';
-        const barW = Math.round((r.ajustado / max) * 100);
-        const p = r.ajustado / totalAjustado;
-        const bonoBase = pozoOper * p;
-        const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
-        const amon = flag?.carta_amonestacion === true;
-        const bono = amon ? bonoBase * 0.5 : bonoBase;
+        const barW = Math.round((r.peso / max) * 100);
+        const p = r.peso / totalPeso;
+        const bono = pozoOper * p;
+        const amon = r.amon;
         const factorTxt = r.factor !== 1 ? r.factor.toFixed(2) : '1.00';
         // Factor >1 divide mas → menos bono (rojo); <1 divide menos → mas bono (verde)
         const factorStyle = r.factor > 1 ? 'color:var(--error)' : (r.factor < 1 ? 'color:var(--success)' : 'color:var(--slate)');
@@ -561,12 +564,12 @@ function render({ list, total, dias }) {
             <td class="num">${fmt(Math.round(r.ajustado))}<span class="bar-wrap"><span class="bar-fill" style="width:${barW}%"></span></span></td>
             <td class="num">${pct(p)}</td>
             <td style="text-align:center">
-                <label title="Carta de amonestación (reduce bono a la mitad)" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:4px 10px;border-radius:16px;background:${amonBg};border:1px solid ${amonBorder};font-size:11px;font-family:'JetBrains Mono',monospace;color:${amonColor}">
+                <label title="Carta de amonestación (peso del bono a la mitad; lo que pierde se reparte entre los demás)" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:4px 10px;border-radius:16px;background:${amonBg};border:1px solid ${amonBorder};font-size:11px;font-family:'JetBrains Mono',monospace;color:${amonColor}">
                     <input type="checkbox" class="ticket-amon" data-usuario="${(r.usuario || '').toUpperCase()}" ${amon ? 'checked' : ''} style="width:13px;height:13px;margin:0" />
-                    ${amon ? 'Amonestado (−50%)' : 'Sin amonestación'}
+                    ${amon ? 'Amonestado (peso ×½)' : 'Sin amonestación'}
                 </label>
             </td>
-            <td class="num"><strong ${amon ? 'style="color:var(--error);text-decoration:line-through var(--slate);"' : ''}>${fmtMoney(bono)}</strong>${amon ? `<div style="font-size:10px;color:var(--slate)">base ${fmtMoney(bonoBase)}</div>` : ''}</td>
+            <td class="num"><strong ${amon ? 'style="color:var(--error)"' : ''}>${fmtMoney(bono)}</strong></td>
         </tr>`;
     }).join('');
 
@@ -1051,23 +1054,23 @@ function construirBonosPorRut() {
     const pozo = parseFloat($('pozoAdmin').value) || 0;
     const regalo = parseFloat($('regaloAdmin').value) || 0;
 
-    // Operarios (factor divide, amonestacion reduce 50%)
+    // Operarios (factor divide; amonestacion reduce peso 50% y se renormaliza al pozo)
     if (lastResult?.list?.length) {
         const pozoOper = currentPozoOperarios;
         const enriched = lastResult.list.map(r => {
             const op = operariosMap.get((r.usuario || '').toUpperCase()) || {};
             const factor = op.factor || 1;
             const divisor = factor > 0 ? factor : 1;
-            return { ...r, factor, ajustado: r.movimientos / divisor, op };
-        });
-        const totalAjustado = enriched.reduce((s, r) => s + r.ajustado, 0) || 1;
-        enriched.forEach(r => {
-            const p = r.ajustado / totalAjustado;
             const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
             const amon = flag?.carta_amonestacion === true;
-            const monto = Math.round(pozoOper * p * (amon ? 0.5 : 1));
+            const ajustado = r.movimientos / divisor;
+            return { ...r, peso: ajustado * (amon ? 0.5 : 1), op };
+        });
+        const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
+        enriched.forEach(r => {
+            const p = r.peso / totalPeso;
             const rut = normRut(r.op.rut);
-            if (rut) map.set(rut, { monto, tipo: 'Operario', nombre: r.nombre });
+            if (rut) map.set(rut, { monto: Math.round(pozoOper * p), tipo: 'Operario', nombre: r.nombre });
         });
     }
     // Administrativos
@@ -1340,29 +1343,29 @@ function exportarConsolidado() {
 
     const filas = [];
 
-    // Operarios (factor divide, amonestacion reduce 50%)
+    // Operarios (factor divide; amonestacion reduce peso 50% y se renormaliza al pozo)
     if (lastResult && lastResult.list && lastResult.list.length) {
         const pozoOper = currentPozoOperarios;
         const enriched = lastResult.list.map(r => {
             const op = operariosMap.get((r.usuario || '').toUpperCase()) || {};
             const factor = op.factor || 1;
             const divisor = factor > 0 ? factor : 1;
-            return { ...r, factor, ajustado: r.movimientos / divisor, op };
-        });
-        const totalAjustado = enriched.reduce((s, r) => s + r.ajustado, 0) || 1;
-        enriched.sort((a, b) => b.ajustado - a.ajustado);
-        enriched.forEach(r => {
-            const p = r.ajustado / totalAjustado;
             const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
             const amon = flag?.carta_amonestacion === true;
-            const monto = Math.round(pozoOper * p * (amon ? 0.5 : 1));
+            const ajustado = r.movimientos / divisor;
+            return { ...r, amon, peso: ajustado * (amon ? 0.5 : 1), op };
+        });
+        const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
+        enriched.sort((a, b) => b.peso - a.peso);
+        enriched.forEach(r => {
+            const p = r.peso / totalPeso;
             filas.push({
                 'Tipo': 'Operario',
                 'Nombre': r.nombre || '',
                 'RUT': r.op.rut || '',
                 'Cargo': r.cargo || '',
-                'Amonestación': amon ? 'Sí' : '',
-                'Monto': monto
+                'Amonestación': r.amon ? 'Sí' : '',
+                'Monto': Math.round(pozoOper * p)
             });
         });
     }
