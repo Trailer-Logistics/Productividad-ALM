@@ -256,13 +256,15 @@
                     <th class="num">Factor</th>
                     <th class="num">Movs. ajustados</th>
                     <th class="num">% del total</th>
-                    <th style="text-align:center">Amonestación</th>
+                    <th style="text-align:center" title="Días de vacaciones (agrega delta: prom_prod × días × 7.5 hrs)">Vac.</th>
+                    <th class="num" title="Delta sumado por vacaciones">Δ Vac.</th>
+                    <th style="text-align:center">Amonest.</th>
                     <th style="text-align:center">Ausencias</th>
                     <th class="num">Bono $</th>
                 </tr>
             </thead>
             <tbody id="tbody">
-                <tr><td colspan="12" class="empty-state">Selecciona un rango de fechas y haz clic en "Consultar".</td></tr>
+                <tr><td colspan="14" class="empty-state">Selecciona un rango de fechas y haz clic en "Consultar".</td></tr>
             </tbody>
         </table>
     </div>
@@ -497,7 +499,7 @@ async function fetchAll(desde, hasta) {
     const all = [];
     while (true) {
         const url = `${SUPABASE_URL}/rest/v1/3-productividad_final`
-            + `?select=usuario,nombre,cargo,total_movimientos,dia`
+            + `?select=usuario,nombre,cargo,total_movimientos,productividad_hora,dia`
             + `&dia=gte.${desde}&dia=lte.${hasta}`
             + `&total_movimientos=gt.0`
             + `&order=dia.asc&limit=${pageSize}&offset=${offset}`;
@@ -522,11 +524,21 @@ function aggregate(rows) {
         total += r.total_movimientos || 0;
         const key = r.usuario;
         if (!map.has(key)) {
-            map.set(key, { usuario: r.usuario, nombre: r.nombre, cargo: r.cargo, movimientos: 0 });
+            map.set(key, { usuario: r.usuario, nombre: r.nombre, cargo: r.cargo, movimientos: 0, prodSum: 0, prodCount: 0 });
         }
-        map.get(key).movimientos += r.total_movimientos || 0;
+        const reg = map.get(key);
+        reg.movimientos += r.total_movimientos || 0;
+        // Promedio de productividad con dias donde hubo movimientos (productividad > 0)
+        const prod = parseFloat(r.productividad_hora);
+        if (!isNaN(prod) && prod > 0) {
+            reg.prodSum += prod;
+            reg.prodCount += 1;
+        }
     }
-    const list = [...map.values()].sort((a, b) => b.movimientos - a.movimientos);
+    const list = [...map.values()].map(e => ({
+        ...e,
+        productividadPromedio: e.prodCount > 0 ? e.prodSum / e.prodCount : 0
+    })).sort((a, b) => b.movimientos - a.movimientos);
     return { list, total, dias: dias.size };
 }
 
@@ -538,15 +550,15 @@ function render({ list, total, dias }) {
 
     const tbody = $('tbody');
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="12" class="empty-state">Sin movimientos en el rango seleccionado.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="empty-state">Sin movimientos en el rango seleccionado.</td></tr>';
         actualizarDivisionPozo();
         return;
     }
     actualizarDivisionPozo();
     const pozoOper = currentPozoOperarios;
 
-    // Factor_ajustado DIVIDE + amonestaciones/ausencias (niveles 0-3) multiplican peso.
-    // 0 → 100% · 1 → 50% · 2 o 3 → 0%. El pozo se renormaliza al 100%.
+    // Factor divide + vacaciones suman delta + amonestaciones/ausencias reducen.
+    // Vacaciones: delta = prom_prod × dias × 7.5 hrs (simulando días no trabajados).
     const enriched = list.map(r => {
         const op = operariosMap.get((r.usuario || '').toUpperCase()) || {};
         const factor = op.factor || 1;
@@ -554,9 +566,12 @@ function render({ list, total, dias }) {
         const flag = operariosBonoMap.get((r.usuario || '').toUpperCase()) || {};
         const amon = parseInt(flag.amonestaciones, 10) || 0;
         const aus = parseInt(flag.ausencias, 10) || 0;
-        const ajustado = r.movimientos / divisor;
+        const dVac = parseInt(flag.dias_vacaciones, 10) || 0;
+        const deltaVac = dVac > 0 ? Math.round((r.productividadPromedio || 0) * dVac * 7.5) : 0;
+        const movsConVac = r.movimientos + deltaVac;
+        const ajustado = movsConVac / divisor;
         const peso = ajustado * factorCombinado(amon, aus);
-        return { ...r, factor, amon, aus, ajustado, peso, rut: op.rut || '-' };
+        return { ...r, factor, amon, aus, dVac, deltaVac, movsConVac, ajustado, peso, rut: op.rut || '-' };
     });
     const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
     // Ordenar por peso desc (lo que realmente se paga)
@@ -582,22 +597,30 @@ function render({ list, total, dias }) {
             <td class="num" style="${factorStyle};font-family:'JetBrains Mono',monospace">${factorTxt}</td>
             <td class="num">${fmt(Math.round(r.ajustado))}<span class="bar-wrap"><span class="bar-fill" style="width:${barW}%"></span></span></td>
             <td class="num">${pct(p)}</td>
-            <td style="text-align:center" title="0=sin · 1=-50% · 2 o 3=-100%">
+            <td style="text-align:center" title="Días de vacaciones (suma delta proporcional al promedio de productividad)">
+                <input type="number" class="vac-input" ${usuarioAttr} min="0" step="1" value="${r.dVac}"
+                    style="width:52px;padding:4px 6px;border:1px solid var(--ice-grey);border-radius:6px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px" />
+            </td>
+            <td class="num" style="${r.deltaVac > 0 ? 'color:var(--success)' : 'color:var(--silver)'}">${r.deltaVac > 0 ? '+' + fmt(r.deltaVac) : '—'}</td>
+            <td style="text-align:center" title="0=sin · 1=-50% · sumar amon+aus ≥ 2 → -100%">
                 ${selectNivel(r.amon, `class="sel-amon" ${usuarioAttr}`)}
             </td>
-            <td style="text-align:center" title="0=sin · 1=-50% · 2 o 3=-100%">
+            <td style="text-align:center" title="0=sin · 1=-50% · sumar amon+aus ≥ 2 → -100%">
                 ${selectNivel(r.aus, `class="sel-aus" ${usuarioAttr}`)}
             </td>
             <td class="num"><strong ${bonoReducido ? 'style="color:var(--error)"' : ''}>${fmtMoney(bono)}</strong></td>
         </tr>`;
     }).join('');
 
-    // Bind selects nivel (amonestaciones + ausencias)
+    // Bind selects nivel (amonestaciones + ausencias) + input vacaciones
     tbody.querySelectorAll('select.sel-amon').forEach(sel => {
         sel.addEventListener('change', (e) => handleNivelChange(e, 'amonestaciones'));
     });
     tbody.querySelectorAll('select.sel-aus').forEach(sel => {
         sel.addEventListener('change', (e) => handleNivelChange(e, 'ausencias'));
+    });
+    tbody.querySelectorAll('input.vac-input').forEach(inp => {
+        inp.addEventListener('change', (e) => handleNivelChange(e, 'dias_vacaciones'));
     });
 }
 
@@ -643,7 +666,7 @@ function actualizarPeriodo() {
 async function consultar() {
     const { desde, hasta } = periodoActual();
     $('btnConsultar').disabled = true;
-    $('tbody').innerHTML = '<tr><td colspan="12" class="loading">Cargando...</td></tr>';
+    $('tbody').innerHTML = '<tr><td colspan="14" class="loading">Cargando...</td></tr>';
     try {
         const anio = parseInt($('anioBono').value, 10);
         const mes = parseInt($('mesBono').value, 10);
@@ -1019,7 +1042,7 @@ async function loadAdminsSection() {
         actualizarDivisionPozo();
         renderAdmins();
     } catch (err) {
-        $('tbodyAdmin').innerHTML = `<tr><td colspan="12" class="empty-state" style="color:var(--error)">Error: ${err.message}</td></tr>`;
+        $('tbodyAdmin').innerHTML = `<tr><td colspan="14" class="empty-state" style="color:var(--error)">Error: ${err.message}</td></tr>`;
     }
 }
 
@@ -1136,7 +1159,9 @@ function construirBonosPorRut() {
             const flag = operariosBonoMap.get((r.usuario || '').toUpperCase()) || {};
             const amon = parseInt(flag.amonestaciones, 10) || 0;
             const aus = parseInt(flag.ausencias, 10) || 0;
-            const ajustado = r.movimientos / divisor;
+            const dVac = parseInt(flag.dias_vacaciones, 10) || 0;
+            const deltaVac = dVac > 0 ? Math.round((r.productividadPromedio || 0) * dVac * 7.5) : 0;
+            const ajustado = (r.movimientos + deltaVac) / divisor;
             return { ...r, peso: ajustado * factorCombinado(amon, aus), op };
         });
         const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
@@ -1425,8 +1450,10 @@ function exportarConsolidado() {
             const flag = operariosBonoMap.get((r.usuario || '').toUpperCase());
             const amon = parseInt(flag?.amonestaciones, 10) || 0;
             const aus = parseInt(flag?.ausencias, 10) || 0;
-            const ajustado = r.movimientos / divisor;
-            return { ...r, amon, aus, peso: ajustado * factorCombinado(amon, aus), op };
+            const dVac = parseInt(flag?.dias_vacaciones, 10) || 0;
+            const deltaVac = dVac > 0 ? Math.round((r.productividadPromedio || 0) * dVac * 7.5) : 0;
+            const ajustado = (r.movimientos + deltaVac) / divisor;
+            return { ...r, amon, aus, dVac, deltaVac, peso: ajustado * factorCombinado(amon, aus), op };
         });
         const totalPeso = enriched.reduce((s, r) => s + r.peso, 0) || 1;
         enriched.sort((a, b) => b.peso - a.peso);
@@ -1437,6 +1464,8 @@ function exportarConsolidado() {
                 'Nombre': r.nombre || '',
                 'RUT': r.op.rut || '',
                 'Cargo': r.cargo || '',
+                'Días Vacaciones': r.dVac,
+                'Δ Vacaciones': r.deltaVac,
                 'Amonestaciones': r.amon,
                 'Ausencias': r.aus,
                 'Monto': Math.round(pozoOper * p)
