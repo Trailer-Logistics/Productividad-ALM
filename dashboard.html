@@ -28,6 +28,8 @@
 
     <!-- SheetJS para descarga Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
 
     <style>
         * {
@@ -903,6 +905,7 @@
             const [modalObsTexto, setModalObsTexto] = useState('');
             const [modalObsAutor, setModalObsAutor] = useState(() => localStorage.getItem('obsAutor') || '');
             const [modalObsSaving, setModalObsSaving] = useState(false);
+            const [exportingPDF, setExportingPDF] = useState(false);
 
             // Recalcular productividad desde la vista (incluye minutas)
             // ==== OBSERVACIONES POR DIA ====
@@ -978,6 +981,131 @@
             };
 
             useEffect(() => { fetchObservaciones(); }, []);
+
+            // ============================================================
+            // EXPORTAR PDF: general + 5 cargos (gráfico + ranking por cada uno)
+            // ============================================================
+            const exportarPDF = async () => {
+                if (exportingPDF) return;
+                setExportingPDF(true);
+                try {
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+                    const pw = pdf.internal.pageSize.getWidth();
+                    const ph = pdf.internal.pageSize.getHeight();
+                    const margin = 28;
+
+                    const capturarElemento = async (id) => {
+                        const el = document.getElementById(id);
+                        if (!el) return null;
+                        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true, logging: false });
+                        return canvas.toDataURL('image/png');
+                    };
+                    const agregarImgPagina = (dataUrl, titulo) => {
+                        if (titulo) {
+                            pdf.setFontSize(14); pdf.setTextColor(25, 40, 83); pdf.setFont(undefined, 'bold');
+                            pdf.text(titulo, margin, margin + 6);
+                        }
+                        if (!dataUrl) return;
+                        const img = new Image(); img.src = dataUrl;
+                        // Proporciones
+                        const props = pdf.getImageProperties(dataUrl);
+                        const maxW = pw - margin * 2;
+                        const maxH = ph - margin * 2 - (titulo ? 24 : 0);
+                        let w = maxW;
+                        let h = (props.height * w) / props.width;
+                        if (h > maxH) { h = maxH; w = (props.width * h) / props.height; }
+                        const x = (pw - w) / 2;
+                        const y = margin + (titulo ? 20 : 0);
+                        pdf.addImage(dataUrl, 'PNG', x, y, w, h);
+                    };
+
+                    // Portada minimal
+                    pdf.setFontSize(22); pdf.setTextColor(14, 36, 94); pdf.setFont(undefined, 'bold');
+                    pdf.text('Productividad ALM · Trailer Logistics', margin, margin + 20);
+                    pdf.setFontSize(12); pdf.setTextColor(94, 99, 115); pdf.setFont(undefined, 'normal');
+                    pdf.text('Rango: ' + (dateFrom || '-') + '  al  ' + (dateTo || '-'), margin, margin + 42);
+                    pdf.text('Generado: ' + new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' }), margin, margin + 58);
+
+                    // --- 1) Gráfico diario (Tendencia General) ---
+                    await new Promise(r => setTimeout(r, 300));
+                    const imgGeneral = await capturarElemento('pdf-chart-general');
+                    if (imgGeneral) { pdf.addPage(); agregarImgPagina(imgGeneral, 'Tendencia de Productividad General'); }
+
+                    // --- 2) Por cada cargo: activar solo ese cargo + capturar gráfico + ranking ---
+                    const cargos = [...tendenciaCargoData.cargos].sort();
+                    const prevActiveCargos = new Set(activeCargos);
+                    for (const cargo of cargos) {
+                        setActiveCargos(new Set([cargo]));
+                        // Esperar que React termine el render con el nuevo estado
+                        await new Promise(r => requestAnimationFrame(() => setTimeout(r, 450)));
+
+                        const imgCargo = await capturarElemento('pdf-chart-cargo');
+                        if (imgCargo) { pdf.addPage(); agregarImgPagina(imgCargo, 'Tendencia · ' + cargo); }
+
+                        // Ranking del cargo: clonar dailyData/weeklyData filtrados y renderizar RankingTable invisible
+                        // Approach simple: pedir al usuario del RankingTable que exponga via window
+                        // Fallback: construir una tabla simple en jsPDF desde filteredData
+                        const filasCargo = filteredData
+                            .filter(r => r.cargo === cargo)
+                            .reduce((acc, r) => {
+                                const k = r.nombre || r.usuario;
+                                if (!acc[k]) acc[k] = { nombre: k, usuario: r.usuario, cargo: r.cargo, movs: 0, horas: 0, prodSum: 0, prodCount: 0, dias: new Set() };
+                                acc[k].movs += parseInt(r.total_movimientos, 10) || 0;
+                                acc[k].horas += parseFloat(r.horas_efectivas) || 0;
+                                const p = parseFloat(r.productividad_hora);
+                                if (!isNaN(p) && p > 0) { acc[k].prodSum += p; acc[k].prodCount += 1; }
+                                acc[k].dias.add(r.dia);
+                                return acc;
+                            }, {});
+                        const filas = Object.values(filasCargo)
+                            .map(o => ({ ...o, prodProm: o.prodCount > 0 ? o.prodSum / o.prodCount : 0, nDias: o.dias.size }))
+                            .sort((a, b) => b.prodProm - a.prodProm);
+
+                        if (filas.length) {
+                            pdf.addPage();
+                            pdf.setFontSize(14); pdf.setTextColor(25, 40, 83); pdf.setFont(undefined, 'bold');
+                            pdf.text('Ranking · ' + cargo, margin, margin + 6);
+                            pdf.setFontSize(10); pdf.setTextColor(94, 99, 115); pdf.setFont(undefined, 'normal');
+                            // Header
+                            const cols = [
+                                { label: '#', w: 24, align: 'left' },
+                                { label: 'Nombre', w: 220, align: 'left' },
+                                { label: 'Usuario', w: 90, align: 'left' },
+                                { label: 'Movimientos', w: 90, align: 'right' },
+                                { label: 'Días', w: 50, align: 'right' },
+                                { label: 'Prod/Hora', w: 80, align: 'right' }
+                            ];
+                            let y = margin + 28;
+                            let x = margin;
+                            pdf.setFillColor(242, 242, 245); pdf.rect(margin, y - 12, cols.reduce((s,c) => s+c.w, 0), 16, 'F');
+                            pdf.setFont(undefined, 'bold'); pdf.setTextColor(25, 40, 83);
+                            cols.forEach(c => { pdf.text(c.label, c.align === 'right' ? x + c.w - 4 : x + 4, y, { align: c.align === 'right' ? 'right' : 'left' }); x += c.w; });
+                            pdf.setFont(undefined, 'normal'); pdf.setTextColor(0, 0, 0);
+                            y += 8;
+                            filas.forEach((f, i) => {
+                                y += 14;
+                                if (y > ph - margin) { pdf.addPage(); y = margin + 14; }
+                                x = margin;
+                                const vals = [String(i + 1), f.nombre, f.usuario, new Intl.NumberFormat('es-CL').format(Math.round(f.movs)), String(f.nDias), f.prodProm.toFixed(2)];
+                                cols.forEach((c, j) => {
+                                    pdf.text(String(vals[j] || '-'), c.align === 'right' ? x + c.w - 4 : x + 4, y, { align: c.align === 'right' ? 'right' : 'left' });
+                                    x += c.w;
+                                });
+                            });
+                        }
+                    }
+                    // Restaurar estado
+                    setActiveCargos(prevActiveCargos);
+
+                    const fname = `Dashboard_ALM_${dateFrom || ''}_${dateTo || ''}.pdf`;
+                    pdf.save(fname);
+                } catch (e) {
+                    alert('Error generando PDF: ' + e.message);
+                } finally {
+                    setExportingPDF(false);
+                }
+            };
 
             const handleRecalculate = async () => {
                 if (recalculating) return;
@@ -1444,6 +1572,26 @@
                             >
                                 {recalculating ? 'Recalculando...' : 'Recalcular Productividad'}
                             </button>
+                            <button
+                                onClick={exportarPDF}
+                                disabled={exportingPDF}
+                                style={{
+                                    padding: '0.6rem 1.2rem',
+                                    backgroundColor: exportingPDF ? '#9CA3AF' : '#0E245E',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    fontWeight: 600,
+                                    fontSize: '0.85rem',
+                                    cursor: exportingPDF ? 'wait' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.4rem',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {exportingPDF ? 'Generando...' : '📄 Exportar PDF'}
+                            </button>
                         </div>
 
                         {/* KPI Cards */}
@@ -1474,7 +1622,7 @@
                         {filteredData.length > 0 ? (
                             <>
                             {/* Tendencia General - Full Width */}
-                            <div className="chart-card" style={{ marginBottom: '2rem' }}>
+                            <div id="pdf-chart-general" className="chart-card" style={{ marginBottom: '2rem' }}>
                                 <h3 className="chart-title">Tendencia de Productividad General</h3>
                                 <div className="chart-container-large">
                                     <ResponsiveContainer width="100%" height="100%">
@@ -1552,7 +1700,7 @@
                                 };
                                 const visibleCargos = tendenciaCargoData.cargos.filter(c => activeCargos.has(c));
                                 return (
-                                    <div className="chart-card" style={{ marginBottom: '2rem' }}>
+                                    <div id="pdf-chart-cargo" className="chart-card" style={{ marginBottom: '2rem' }}>
                                         <h3 className="chart-title">Tendencia por Cargo</h3>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
                                             {tendenciaCargoData.cargos.map((cargo, i) => {
@@ -1641,10 +1789,12 @@
 
                         {/* Ranking Table */}
                         {(filteredData.length > 0 || dailyData.length > 0 || weeklyData.length > 0) && (
-                            <RankingTable
-                                dailyData={dailyData}
-                                weeklyData={weeklyData}
-                            />
+                            <div id="pdf-ranking">
+                                <RankingTable
+                                    dailyData={dailyData}
+                                    weeklyData={weeklyData}
+                                />
+                            </div>
                         )}
 
                         <div style={{ height: '2rem' }}></div>
